@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>PLT和GOT–实现位置无关代码 | Triangleowl’s Blog</title>
+<meta name="generator" content="Jekyll v4.0.0" />
+<meta property="og:title" content="PLT和GOT–实现位置无关代码" />
+<meta name="author" content="Triangleowl" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Table Of Contents 链接时重定位 装载时重定位 模块内部数据访问 模块间数据访问 模块间函数调用" />
+<meta property="og:description" content="Table Of Contents 链接时重定位 装载时重定位 模块内部数据访问 模块间数据访问 模块间函数调用" />
+<link rel="canonical" href="http://localhost:4000/linux/Position-Independent-Code" />
+<meta property="og:url" content="http://localhost:4000/linux/Position-Independent-Code" />
+<meta property="og:site_name" content="Triangleowl’s Blog" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-11-06T00:00:00+08:00" />
+<script type="application/ld+json">
+{"description":"Table Of Contents 链接时重定位 装载时重定位 模块内部数据访问 模块间数据访问 模块间函数调用","@type":"BlogPosting","url":"http://localhost:4000/linux/Position-Independent-Code","headline":"PLT和GOT–实现位置无关代码","dateModified":"2019-11-06T00:00:00+08:00","datePublished":"2019-11-06T00:00:00+08:00","author":{"@type":"Person","name":"Triangleowl"},"mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/linux/Position-Independent-Code"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="http://localhost:4000/feed.xml" title="Triangleowl's Blog" /></head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Triangleowl&#39;s Blog</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">PLT和GOT--实现位置无关代码</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2019-11-06T00:00:00+08:00" itemprop="datePublished">Nov 6, 2019
+      </time>• <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span class="p-author h-card" itemprop="name">Triangleowl</span></span></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <h4 id="table-of-contents">Table Of Contents</h4>
+<ul>
+  <li>
+    <h4 id="链接时重定位-"><a href="#链接时重定位">链接时重定位 </a></h4>
+  </li>
+  <li>
+    <h4 id="装载时重定位-"><a href="#装载时重定位">装载时重定位 </a></h4>
+    <ul>
+      <li>
+        <h5 id="模块内部数据访问-"><a href="#模块内部数据访问">模块内部数据访问 </a></h5>
+      </li>
+      <li>
+        <h5 id="模块间数据访问-"><a href="#模块间数据访问">模块间数据访问 </a></h5>
+      </li>
+      <li>
+        <h5 id="模块间函数调用-"><a href="#模块间函数调用">模块间函数调用 </a></h5>
+        <hr />
+      </li>
+    </ul>
+  </li>
+</ul>
+
+<h3 id="链接时重定位"><a href="#链接时重定位">链接时重定位</a></h3>
+
+<p>程序是如何定位来自外部的符号（如引用外部的变量和函数）？ 一个简单的例子如下：</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ cat test.c
+extern int foo;
+
+int function(void)
+{
+	return foo;
+}
+
+#编译程序，生成目标文件test.o
+$ gcc -c test.c
+
+#将目标文件反汇编
+$ objdump -d test.o
+...
+00000000 &lt;function&gt;:
+   0:	55                   	push   %ebp
+   1:	89 e5                	mov    %esp,%ebp
+   3:	a1 00 00 00 00       	mov    0x0,%eax
+   8:	5d                   	pop    %ebp
+   9:	c3                   	ret
+...
+</code></pre></div></div>
+
+<p>可以看到本来应该将<code class="highlighter-rouge">foo</code>的值赋给<code class="highlighter-rouge">%eax</code>，但是汇编代码显示将0x0赋给了<code class="highlighter-rouge">%eax</code>。这是因为test.o无法定
+位来自外部的<code class="highlighter-rouge">foo</code>，这等到链接过程由链接器来确定<code class="highlighter-rouge">foo</code>，如果使用链接器将<code class="highlighter-rouge">foo</code>与另一个目标文件的
+<code class="highlighter-rouge">foo</code>绑定则在生成可执行文件时就可以确定<code class="highlighter-rouge">foo</code>的地址。也就是说上面的例子对<code class="highlighter-rouge">foo</code>的重定位是在链接时
+完成的，叫做<code class="highlighter-rouge">链接时重定位(Link Time Relocation)</code>。</p>
+
+<p>链接时重定位的代码需要指定加载地址，当加载器加载代码时只要按照指定的加载地址即可。这种代码并不是
+位置无关代码(PIC)。如查看<code class="highlighter-rouge">/bin/bash</code>的program headers:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ readelf --headers /bin/bash
+...
+Program Headers:
+  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+  ...
+  LOAD           0x000000 0x08048000 0x08048000 0x1098d8 0x1098d8 R E 0x1000
+  LOAD           0x109ef8 0x08152ef8 0x08152ef8 0x049b0 0x09974 RW  0x1000
+  ...
+...
+
+</code></pre></div></div>
+<p>可以看到<code class="highlighter-rouge">/bin/bash</code>并不是位置无关代码，因为它的代码(<code class="highlighter-rouge">R</code><code class="highlighter-rouge">-</code><code class="highlighter-rouge">E</code>)将被加载到地址0x08048000处，数据(<code class="highlighter-rouge">R</code><code class="highlighter-rouge">W</code><code class="highlighter-rouge">-</code>)将被加载
+到地址0x08152ef8处。</p>
+
+<p>共享库就不能被指定加载地址，而是应该可以被加载到进程运行的任意地址，这就要采用位置无关代码技术。
+如<code class="highlighter-rouge">ld-linux.so.2</code>共享库的program heasers中就没有指定加载地址。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ readelf --headers /lib/ld-linux.so.2
+...
+Program Headers:
+  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+  LOAD           0x000000 0x00000000 0x00000000 0x2220c 0x2220c R E 0x1000
+  LOAD           0x022c80 0x00023c80 0x00023c80 0x00bd8 0x00c98 RW  0x1000
+  ...
+...
+</code></pre></div></div>
+
+<h3 id="装载时重定位"><a href="#装载时重定位">装载时重定位</a></h3>
+
+<h4 id="模块内部数据访问"><a href="#模块内部数据访问">模块内部数据访问</a></h4>
+<p>接下来我们自己编译一个位置无关代码(使用gcc编译时添加 -fPIC 和 -shared选项)，然后将目标代码反
+汇编，看看是怎么定位符号的。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ cat test2.c
+static int foo = 100;//静态变量
+
+int function(void)
+{
+	return foo;
+}
+
+#加上-fPIC -shared 选项，生成位置无关代码
+$ gcc -fPIC -shared -o libtest2.so test2.c
+</code></pre></div></div>
+<p>使用<code class="highlighter-rouge">objumpd</code>反汇编<code class="highlighter-rouge">libtest2.so</code>可以看到function()对应的汇编代码，调用了__x86.get_pc_thunk.ax,
+__x86.get_pc_thunk.ax的代码很简单，只是将<code class="highlighter-rouge">(%esp)</code>的值传给<code class="highlighter-rouge">%eax</code>。有人可能会有疑问，这么简单
+为什么还要封装成函数？因为处理器不支持直接获取当前程序的位置也就是<code class="highlighter-rouge">PC</code>，所以通过调用
+__x86.get_pc_thunk.ax函数就是为了达到获取当前的<code class="highlighter-rouge">PC</code>。在调用__x86.get_pc_thunk.ax会先把<code class="highlighter-rouge">call</code>
+的下一条指令的地址压如stack，当程序流程转向__x86.get_pc_thunk.ax时<code class="highlighter-rouge">%esp</code>正好指向<code class="highlighter-rouge">add    $0x1b28,%eax</code>
+指令的地址。就可以将PC存入<code class="highlighter-rouge">%eax</code>了。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ objdump -d libtest2.so
+...
+000004d0 &lt;function&gt;:
+ 4d0:	55                   	push   %ebp
+ 4d1:	89 e5                	mov    %esp,%ebp
+ 4d3:	e8 0d 00 00 00       	call   4e5 &lt;__x86.get_pc_thunk.ax&gt;
+ 4d8:	05 28 1b 00 00       	add    $0x1b28,%eax
+ 4dd:	8b 80 10 00 00 00    	mov    0x10(%eax),%eax
+ 4e3:	5d                   	pop    %ebp
+ 4e4:	c3                   	ret
+...
+
+000004e5 &lt;__x86.get_pc_thunk.ax&gt;:
+ 4e5:	8b 04 24             	mov    (%esp),%eax
+ 4e8:	c3                   	ret
+...
+</code></pre></div></div>
+<p>执行完__x86.get_pc_thunk.ax返回function()后将<code class="highlighter-rouge">%eax</code>的值就被赋值为0x4d8, 然后将<code class="highlighter-rouge">%eax</code>加上0x1b28即：
+0x4d8 + 0x1b28 = 0x2000。<code class="highlighter-rouge">%eax</code> + 0x10 = 0x2010。这里存放的应该就是<code class="highlighter-rouge">foo</code>的值了。反汇编一下看看是不是。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ objdump --disassemble-all libtest2.so
+...
+00002010 &lt;foo&gt;:
+    2010:	64 00 00             	add    %al,%fs:(%eax)
+	...
+...
+</code></pre></div></div>
+<p>果然在0x2010处存放的是十六进制的0x64,即十进制的100。</p>
+
+<h4 id="模块间数据访问"><a href="#模块间数据访问">模块间数据访问</a></h4>
+
+<p>回想一下上面的程序，虽然是位置无关代码，但是变量<code class="highlighter-rouge">foo</code>是一个<code class="highlighter-rouge">static</code>变量，所以要访问<code class="highlighter-rouge">foo</code>只要知道<code class="highlighter-rouge">foo</code>和当前
+指令的偏移量就够了。但是如果引用了来自其他共享库中的变量会怎么样呢？因为共享库的加载地址是不确定的，那如何
+做到引用外部变量而不出错呢？来看看下面的程序是如何实现重定位的。</p>
+
+<p>稍微调整一下上面的代码，并添加 <code class="highlighter-rouge">-fPIC</code> <code class="highlighter-rouge">-shared</code>选项编译：</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>extern int foo;//外部变量
+
+int function()
+{
+	return foo;
+}
+
+$ gcc -fPIC -shared -o libtest3.so test3.c
+</code></pre></div></div>
+<p>接着反汇编<code class="highlighter-rouge">libtest3.so</code>:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ objdump -d libtest3.so
+...
+000004f0 &lt;function&gt;:
+ 4f0:	55                   	push   %ebp
+ 4f1:	89 e5                	mov    %esp,%ebp
+ 4f3:	e8 0f 00 00 00       	call   507 &lt;__x86.get_pc_thunk.ax&gt;
+ 4f8:	05 08 1b 00 00       	add    $0x1b08,%eax
+ 4fd:	8b 80 f4 ff ff ff    	mov    -0xc(%eax),%eax
+ 503:	8b 00                	mov    (%eax),%eax
+ 505:	5d                   	pop    %ebp
+ 506:	c3                   	ret
+...
+</code></pre></div></div>
+<p>仔细观察可以发现<code class="highlighter-rouge">libtest3.so</code>和<code class="highlighter-rouge">libtest2.so</code>还是有点区别的。调用__x86.get_pc_thunk.ax之后
+<code class="highlighter-rouge">%eax</code>值是0x4f8, <code class="highlighter-rouge">%eax</code> + 0x1b08 = 0x2000，0x2000 - 0x0c = 0x1ff4。也就是说0x1ff4处存放的应该是
+foo的值。查看<code class="highlighter-rouge">libtest3.so</code>的重定位表可以发现0x1ff4处是一个类型为<code class="highlighter-rouge">R_386_GLOB_DAT</code>的值。当
+<code class="highlighter-rouge">libtest3.so</code>被加载时，动态链接器会检查重定位表，并将<code class="highlighter-rouge">foo</code>的值放到<code class="highlighter-rouge">.got</code>条目中的对应位置(0x1ff4).</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ objdump -R libtest3.so
+
+DYNAMIC RELOCATION RECORDS
+...
+OFFSET   TYPE              VALUE
+00001ff4 R_386_GLOB_DAT    foo
+...
+</code></pre></div></div>
+<p>从这个例子可以发现位置无关代码引用外部的变量与代码加载到内存的位置无关，因为代码指定从<code class="highlighter-rouge">.got</code>
+中取数据，因为不能修改共享的代码，而<code class="highlighter-rouge">.got</code>属于数据，可以对其进行写操作，所以只要在加载时让动
+态链接器找到对应的变量的值并存入到<code class="highlighter-rouge">.got</code>中，那么代码就可以引用了。这样就能保证在不修改代码的
+情况下完成数据的访问。</p>
+
+<h4 id="模块间函数调用"><a href="#模块间函数调用">模块间函数调用</a></h4>
+<p>对于动态库函数的引用，理论上讲可以采用和<a href="#模块间数据访问">模块间数据访问</a>一样的方法来实现函数地址
+解析，但是ELF采用了另外一种更复杂而又精妙的方法。不仅要使用<code class="highlighter-rouge">GOT</code>表，还用到了<code class="highlighter-rouge">PLT</code>表。</p>
+
+<p>再看一个例子：</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ cat test.c
+extern int foo;
+
+int function(void)
+{
+	return foo;
+}
+
+$ gcc -fPIC -shared -o libtest4.so test4.c
+</code></pre></div></div>
+<p>还是将<code class="highlighter-rouge">libtest4.so</code>反汇编进行分析。可以看到对<code class="highlighter-rouge">foo</code>函数的调用是通过<code class="highlighter-rouge">foo@plt</code>来定位<code class="highlighter-rouge">foo</code>的地址。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ objdump -d libtest4.so
+...
+00000500 &lt;function&gt;:
+ 500:	55                   	push   %ebp
+ 501:	89 e5                	mov    %esp,%ebp
+ 503:	53                   	push   %ebx
+ 504:	83 ec 04             	sub    $0x4,%esp
+ 507:	e8 12 00 00 00       	call   51e &lt;__x86.get_pc_thunk.ax&gt;
+ 50c:	05 f4 1a 00 00       	add    $0x1af4,%eax
+ 511:	89 c3                	mov    %eax,%ebx
+ 513:	e8 98 fe ff ff       	call   3b0 &lt;foo@plt&gt;
+ 518:	83 c4 04             	add    $0x4,%esp
+ 51b:	5b                   	pop    %ebx
+ 51c:	5d                   	pop    %ebp
+ 51d:	c3                   	ret
+...
+
+
+</code></pre></div></div>
+
+<p><code class="highlighter-rouge">%eax</code>存放的是0x50c, <code class="highlighter-rouge">%ebx</code>存放的是<code class="highlighter-rouge">%eax</code>+0x1af4 = 0x2000。使用<code class="highlighter-rouge">readelf --sections</code>可以看到<code class="highlighter-rouge">.got.plt</code>的
+地址就是0x2000,其实0x2000就是<code class="highlighter-rouge">过程链接表</code>(Procedure Linkage Table, PLT)。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ readelf --sections libtest4.so
+Section Headers:
+  [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
+  ...
+  [20] .got              PROGBITS        00001fec 000fec 000014 04  WA  0   0  4
+  [21] .got.plt          PROGBITS        00002000 001000 000010 04  WA  0   0  4
+  ...
+</code></pre></div></div>
+
+<p><code class="highlighter-rouge">PLT</code>和共享库的代码一样是多个进程共享的，也就是说不能改写<code class="highlighter-rouge">PLT</code>，但是可以通过<code class="highlighter-rouge">PLT</code>来改写数据部分来确定
+引用外部符号的绝对地址。并且可执行文件的<code class="highlighter-rouge">PLT</code>表和共享目标文件的<code class="highlighter-rouge">PLT</code>是分开的。利用<code class="highlighter-rouge">PLT</code>表确定引用的。
+<code class="highlighter-rouge">PLT</code>的结构如下:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Procedure Linkage Table
+
+.PLT0:  pushl 4(%ebx)
+        jmp *8(%ebx)
+        nop; nop
+        nop; nop
+.PLT1:  jmp *name1@GOT(%ebx)
+        pushl $offset
+        jmp .PLT0@PC
+.PLT2:  jmp *name2@GOT(%ebx)
+        pushl $offset
+        jmp .PLT0@PC
+</code></pre></div></div>
+<p>通过<code class="highlighter-rouge">PLT</code>来确定<code class="highlighter-rouge">foo</code>的地址可以分为一下几个步骤：</p>
+<ul>
+  <li>
+    <p>将共享库加载到内存，动态连接器将<code class="highlighter-rouge">GOT</code>表的第二项(<code class="highlighter-rouge">GOT[1]</code>)和第三项(‘GOT[2]’)分别设置为特殊值。
+<code class="highlighter-rouge">PLT[0]</code>也是一个特殊的条目。</p>
+  </li>
+  <li>调用者(caller)负责将<code class="highlighter-rouge">GOT</code>(注意是<code class="highlighter-rouge">.got.plt</code>, 不是<code class="highlighter-rouge">.got</code>)表的地址存放在<code class="highlighter-rouge">%ebx</code>中(注意，ELF规定必须
+将<code class="highlighter-rouge">GOT</code>的地址放入到<code class="highlighter-rouge">%ebx</code>而不是其他寄存器)。
+    <div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code> 507:	e8 12 00 00 00       	call   51e &lt;__x86.get_pc_thunk.ax&gt;
+ 50c:	05 f4 1a 00 00       	add    $0x1af4,%eax
+ 511:	89 c3                	mov    %eax,%ebx
+</code></pre></div>    </div>
+  </li>
+  <li>然后调到<code class="highlighter-rouge">foo</code>对应的<code class="highlighter-rouge">PLT</code>条目(<code class="highlighter-rouge">PLT[1]</code>)，即<code class="highlighter-rouge">foo@plt</code>。当首次调用<code class="highlighter-rouge">foo</code>前，<code class="highlighter-rouge">foo</code>对应的<code class="highlighter-rouge">GOT</code>表存放的是<code class="highlighter-rouge">foo</code>的
+<code class="highlighter-rouge">PLT</code>条目的第二条指令<code class="highlighter-rouge">pushl 0x00</code>的地址，而不是<code class="highlighter-rouge">foo</code>的绝对地址。
+    <div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code># foo 的 PLT
+000003b0 &lt;foo@plt&gt;:
+ 3b0:	ff a3 0c 00 00 00    	jmp    *0xc(%ebx)
+ 3b6:	68 00 00 00 00       	push   $0x0
+ 3bb:	e9 e0 ff ff ff       	jmp    3a0 &lt;_init+0x28&gt;
+</code></pre></div>    </div>
+  </li>
+  <li>然后跳转到<code class="highlighter-rouge">PLT</code>的<code class="highlighter-rouge">PLT[1]</code>的<code class="highlighter-rouge">pushl 0x0</code>指令执行。这里的<code class="highlighter-rouge">0x0</code>是重定位偏移，它是一个非负数。它是和<code class="highlighter-rouge">GOT</code>对应的。
+在将重定位偏移量压如stack之后，程序就跳转到了<code class="highlighter-rouge">PLT[0]</code>。<code class="highlighter-rouge">PLT[0]</code>将<code class="highlighter-rouge">GOT</code>的第第二项<code class="highlighter-rouge">GOT[1]</code>(<code class="highlighter-rouge">%ebx</code>+0x4)压入
+stack中。然后跳转到<code class="highlighter-rouge">GOT[2]</code>(<code class="highlighter-rouge">%ebx</code>+0x8)处,<code class="highlighter-rouge">GOT[2]</code>将控制权交给动态链接器。
+    <div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code># PLT[0]
+000003a0 &lt;foo@plt-0x10&gt;:
+ 3a0:	ff b3 04 00 00 00    	pushl  0x4(%ebx)
+ 3a6:	ff a3 08 00 00 00    	jmp    *0x8(%ebx)
+ 3ac:	00 00                	add    %al,(%eax)
+</code></pre></div>    </div>
+  </li>
+  <li>当动态链接器拿到控制权之后会根据压入stack的参数来确定引用的符号的值，然后将此值写入对应的<code class="highlighter-rouge">GOT</code>中，然后将控制
+权还回给用调用程序。</li>
+</ul>
+
+<p><img src="https://github.com/Triangleowl/picture/blob/master/GOT1.png?raw=true" alt="第一次调用foo" /></p>
+
+<p>至此<code class="highlighter-rouge">foo</code>的<code class="highlighter-rouge">GOT</code>表中存放的已经是<code class="highlighter-rouge">foo</code>的绝对地址了，当再次代用<code class="highlighter-rouge">foo</code>时就不会像第一次调用这么麻烦，因为<code class="highlighter-rouge">GOT</code>表中已经
+有<code class="highlighter-rouge">foo</code>的地址了。</p>
+
+<p><img src="https://github.com/Triangleowl/picture/blob/master/GOT2.png?raw=true" alt="第二次调用foo" /></p>
+
+<hr />
+<p>参考：<br />
+《深入理解计算机系统》<br />
+《程序员的自我修养》<br />
+<a href="https://www.technovelty.org/linux/plt-and-got-the-key-to-code-sharing-and-dynamic-libraries.html">PLT and GOT - the key to code sharing and dynamic libraries</a><br />
+<a href="http://www.skyfree.org/linux/references/ELF_Format.pdf">ELF format</a></p>
+
+  </div><a class="u-url" href="/linux/Position-Independent-Code" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col one-half">
+      <h2 class="footer-heading">Triangleowl&#39;s Blog</h2>
+        <ul class="contact-list">
+          <li class="p-name">triangleowl</li><li><a class="u-email" href="mailto:shil0618207@gmail.com">shil0618207@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col one-half">
+        <p>Hello World!
+</p>
+      </div>
+
+      <div class="social-links"><ul class="social-media-list"><li><a rel="me" href="https://github.com/triangleowl.github" title="triangleowl.github"><svg class="svg-icon grey"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg></a></li><li><a rel="me" href="https://twitter.com/triangleowl1" title="triangleowl1"><svg class="svg-icon grey"><use xlink:href="/assets/minima-social-icons.svg#twitter"></use></svg></a></li><li><a href="/feed.xml" title="rss"><svg class="svg-icon grey"><use xlink:href="/assets/minima-social-icons.svg#rss"></use></svg></a></li></ul>
+</div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

