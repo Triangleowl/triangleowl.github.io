@@ -11,7 +11,11 @@ permalink: /:categories/:title
 2. 调用 `RegisterClass` 注册定义的 `WNDCLASS`；
 3. 调用 `CreateWindow` 创建一个 window；
 4. 调用 `ShowWindow` 显示创建的 window
-5. 接受键盘、鼠标数据
+5. 接受键盘、鼠标数据  
+
+
+完整代码见[源码]
+
 
 ### 定义一个 `WNDCLASS`
 ```C
@@ -74,6 +78,6 @@ LRESULT CALLBACK WindowProc(          HWND hwnd,
 
 
 
-
+[源码]:https://github.com/Triangleowl/101/blob/master/first-window/window.cpp "源码链接"
 
 [在线文档]:https://docs.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program "第一个window程序"
