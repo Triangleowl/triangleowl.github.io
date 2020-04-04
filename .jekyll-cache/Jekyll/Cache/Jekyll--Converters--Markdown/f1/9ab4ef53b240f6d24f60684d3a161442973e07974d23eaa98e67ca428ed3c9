@@ -1,0 +1,257 @@
+I"
+><h4 id="table-of-contents"><strong>Table Of Contents</strong></h4>
+<h4 id="hello-world的编译过程-"><a href="#hello-world的编译过程">hello-world的编译过程 </a></h4>
+<h4 id="hello-world的执行过程-"><a href="#hello-world的执行过程">hello-world的执行过程 </a></h4>
+<ul>
+  <li>
+    <h5 id="函数的入口地址-"><a href="#函数的入口地址">函数的入口地址 </a></h5>
+  </li>
+  <li>
+    <h5 id="__libc_start_main_函数-"><a href="#__libc_start_main_函数">__libc_start_main_函数 </a></h5>
+  </li>
+  <li>
+    <h5 id="__libc_csu_init函数-"><a href="#__libc_csu_init函数">__libc_csu_init函数 </a></h5>
+  </li>
+  <li>
+    <h5 id="_init函数-"><a href="#_init函数">_init函数 </a></h5>
+  </li>
+</ul>
+
+<h3 id="hello-world的编译过程"><a href="#hello-world的编译过程">hello-world的编译过程</a></h3>
+
+<p>我们都知道一个简单的 <em>hello world</em> C程序是经过<code class="highlighter-rouge">预处理</code>、<code class="highlighter-rouge">编译</code>、<code class="highlighter-rouge">汇编</code>、<code class="highlighter-rouge">链接</code>几个阶段最终生成可执行文件的。每个过程的工作可以概括如下：</p>
+
+<ul>
+  <li>
+    <p><strong>预处理阶段</strong>. 预处理器(<code class="highlighter-rouge">cpp</code>)根据以 <em><strong>#</strong></em> 开头的代码来修改原始的C程序。比如 <em>hello world</em> 程序将 <em>#include</em> 命令告诉预处理器读取 <em>stdio.h</em> 的内容，并插入到 <em>hello world</em> 程序中生成 <em>hello.i</em> 文件。</p>
+  </li>
+  <li>
+    <p><strong>编译阶段</strong>. 编译器(<code class="highlighter-rouge">cc1</code>)将 <em>hello.i</em> 文件翻译成汇编文件 <em>hello.s</em>。</p>
+  </li>
+  <li>
+    <p><strong>汇编阶段</strong>. 汇编器(<code class="highlighter-rouge">as</code>)将 <em>hello.s</em> 文件中的汇编指令翻译成机器语言指令，并把这些指令打包成_可重定位目标文件_，并按照<code class="highlighter-rouge">ELF</code>文件格式生成 <em>hello.o</em> 文件。</p>
+  </li>
+  <li>
+    <p><strong>链接阶段</strong>. <em>hello world</em> 程序调用了 <em>printf</em> 函数，但是我们的源文件里并没有这个函数的代码，它是一个C语言标准库里的代码。链接阶段就由连接器(<code class="highlighter-rouge">ld</code>)来确定 <em>printf</em> 函数的地址，从而确保程序在执行时能正确调用 <em>printf</em> 函数。</p>
+  </li>
+</ul>
+
+<p>简单的用命令来概括就很简单了，准备好了 <em>hello world</em> 程序之后，只需下面一个命令就能立马从 <em>hello world</em> 源程序得到可执行程序。</p>
+
+<pre><code class="language-C">$ cat hello.c
+#include &lt;stdio.h&gt;
+
+int main(int argc, char **argv)
+{
+	printf("hello world\n");
+
+	return 0;
+}
+
+$ gcc hello.c -o hello
+</code></pre>
+<p>那么问题来了， <em>hello world</em> 的执行过程是怎样的呢？你可能会说很简单啊，程序成 <em>main</em> 函数开始执行，调用 <em>printf</em> 函数，所以我们能看到一句 <em>hello world</em> ，然后程序退出。没错，程序就是这样运行的，从 <em>main</em> 函数开始的。如果再深究一下：哪个函数调用了 <em>main</em> 函数呢？这篇blog来介绍一下 <em>main</em> 函数是怎么被调用的。</p>
+
+<h3 id="hello-world的执行过程"><a href="#hello-world的执行过程">hello-world的执行过程</a></h3>
+
+<h4 id="函数的入口地址"><a href="#函数的入口地址">函数的入口地址</a></h4>
+
+<p>首先我们用<code class="highlighter-rouge">readelf -h</code>查看一下 <em>hello</em> 的基本信息：</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ readelf -h hello
+ELF Header:
+  Magic:   7f 45 4c 46 01 01 01 00 00 00 00 00 00 00 00 00
+  Class:                             ELF32
+  Data:                              2's complement, little endian
+  Version:                           1 (current)
+  OS/ABI:                            UNIX - System V
+  ABI Version:                       0
+  Type:                              EXEC (Executable file)
+  Machine:                           Intel 80386
+  Version:                           0x1
+  Entry point address:               0x8048310  //入口地址
+  Start of program headers:          52 (bytes into file)
+  Start of section headers:          6108 (bytes into file)
+  Flags:                             0x0
+  Size of this header:               52 (bytes)
+  Size of program headers:           32 (bytes)
+  Number of program headers:         9
+  Size of section headers:           40 (bytes)
+  Number of section headers:         31
+  Section header string table index: 28
+</code></pre></div></div>
+
+<p><em>hello</em> 程序的入口地址是 <em>0x8048310</em>，打开<code class="highlighter-rouge">GDB</code>在 <em>0x8048310</em> 设置断点，然后运行。程序停在了 <em>__start_</em> 函数。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ gdb ./hello -q
+
+(gdb) b *0x8048310
+Breakpoint 1 at 0x8048310
+(gdb) r
+Starting program: /home/me/tmp/hello/hello
+
+Breakpoint 1, 0x08048310 in _start ()
+
+</code></pre></div></div>
+<p>我们反汇编一下 <em>__start_</em> 函数：</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) disas _start
+Dump of assembler code for function _start:
+   0x08048310 &lt;+0&gt;:	xor    %ebp,%ebp          //将 %ebx 清零
+   0x08048312 &lt;+2&gt;:	pop    %esi               //将 argc 弹如 %esi
+   0x08048313 &lt;+3&gt;:	mov    %esp,%ecx          //将 argv 存入 %ecx
+   0x08048315 &lt;+5&gt;:	and    $0xfffffff0,%esp   
+   0x08048318 &lt;+8&gt;:	push   %eax              
+   0x08048319 &lt;+9&gt;:	push   %esp             //stck end
+   0x0804831a &lt;+10&gt;:	push   %edx             // _rtld_fini 函数地址
+   0x0804831b &lt;+11&gt;:	push   $0x80484a0       // _fini 函数地址
+   0x08048320 &lt;+16&gt;:	push   $0x8048440       // _init 函数地址
+   0x08048325 &lt;+21&gt;:	push   %ecx             // argv
+   0x08048326 &lt;+22&gt;:	push   %esi             // argc
+   0x08048327 &lt;+23&gt;:	push   $0x804840b       // main 函数地址
+   0x0804832c &lt;+28&gt;:	call   0x80482f0 &lt;__libc_start_main@plt&gt;
+   0x08048331 &lt;+33&gt;:	hlt
+</code></pre></div></div>
+
+<p>首先说明一下，在进入 <em>_start</em> 函数数时 stack 里面存放的是 <em>argc</em> 、 <em>argv</em> 、 <em>env</em> 。进入 <em>_start</em> 函数后先将<code class="highlighter-rouge">%ebx</code>清0，然后将 <em>argc</em> 弹到 <code class="highlighter-rouge">%esi</code>中。此时<code class="highlighter-rouge">%esp</code>已经指向 <em>argv</em> ，再将 <em>argv</em> 存入<code class="highlighter-rouge">%ecx</code>中。再将<code class="highlighter-rouge">%esp</code>设置为16字节对齐。接着连续执行8次压栈操作，这是将 <em>__libc_start_main</em> 函数的的参数压入stack中，但是<code class="highlighter-rouge">%eax</code>的值对 <em>__libc_start_main</em> 没有影响，这么做是为了对齐。将 <em>__libc_start_main</em> 函数需要的参数都压入stack之后就是调用 <em>__libc_start_main</em> 函数了。可以说 <em>_start</em> 函数就是为 <em>__libc_start_main</em> 函数做准备的。</p>
+
+<p>如果在 <em>__libc_start_main</em> 函数处设一个断点，然后使用<code class="highlighter-rouge">bt</code>就可以看到 <em>___libc_start_main</em> 函数的参数情况。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ gdb ./hello -q
+Reading symbols from ./hello...(no debugging symbols found)...done.
+(gdb) b __libc_start_main
+Breakpoint 1 at 0x80482f0
+(gdb) r
+Starting program: /home/me/tmp/hello/hello
+
+Breakpoint 1, __libc_start_main (main=0x804840b &lt;main&gt;, argc=1, argv=0xbffff034,
+    init=0x8048440 &lt;__libc_csu_init&gt;, fini=0x80484a0 &lt;__libc_csu_fini&gt;,
+    rtld_fini=0xb7fea880 &lt;_dl_fini&gt;, stack_end=0xbffff02c) at ../csu/libc-start.c:134
+</code></pre></div></div>
+
+<h4 id="__libc_start_main_函数"><a href="#__libc_start_main_函数">__libc_start_main_函数</a></h4>
+
+<p>从名字就可以看出来 ___libc_start_main 是一个库函数，所以不能直接调用 ___libc_start_main 函数，而是要通过<code class="highlighter-rouge">PLT</code>表来确定 ___libc_start_main 函数的地址。 ___libc_start_main 函数所做的工作主要有：</p>
+
+<ul>
+  <li>
+    <p>处理 <code class="highlighter-rouge">setuid</code> 、<code class="highlighter-rouge">setgid</code>安全问题。</p>
+  </li>
+  <li>
+    <p>启动线程。</p>
+  </li>
+  <li>
+    <p>将 <code class="highlighter-rouge">fini</code>(hello-world程序本身的)和<code class="highlighter-rouge">rtld_fini</code>(动态连接器的)作为参数传给<code class="highlighter-rouge">at_exit</code>，使他们被<code class="highlighter-rouge">at_exit</code>函数调用，完成清理工作。</p>
+  </li>
+  <li>
+    <p>调用init函数</p>
+  </li>
+  <li>
+    <p>调用<code class="highlighter-rouge">main</code>函数。</p>
+  </li>
+  <li>
+    <p>调用<code class="highlighter-rouge">exit</code>函数，经将<code class="highlighter-rouge">main</code>函数的返回值返回给系统。</p>
+  </li>
+</ul>
+
+<h4 id="__libc_csu_init函数"><a href="#__libc_csu_init函数">__libc_csu_init函数</a></h4>
+<p><em>__libc_start_main</em> 函数调用的 <em>_init</em> 函数实际上是 <em>__libc_csu_init</em> 函数，而 <em>__libc_csu_init</em> 函数的也被添加到了 <em>hello</em> 中，使用 <code class="highlighter-rouge">objdump -d</code>可以看到 <em>__libc_csu_init</em> 函数汇编如下：</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ objdump -d hello
+...
+08048440 &lt;__libc_csu_init&gt;:
+ 8048440:	55                   	push   %ebp
+ 8048441:	57                   	push   %edi
+ 8048442:	56                   	push   %esi
+ 8048443:	53                   	push   %ebx
+ 8048444:	e8 f7 fe ff ff       	call   8048340 &lt;__x86.get_pc_thunk.bx&gt;
+ 8048449:	81 c3 b7 1b 00 00    	add    $0x1bb7,%ebx
+ 804844f:	83 ec 0c             	sub    $0xc,%esp
+ 8048452:	8b 6c 24 20          	mov    0x20(%esp),%ebp
+ 8048456:	8d b3 0c ff ff ff    	lea    -0xf4(%ebx),%esi
+ 804845c:	e8 47 fe ff ff       	call   80482a8 &lt;_init&gt;
+ 8048461:	8d 83 08 ff ff ff    	lea    -0xf8(%ebx),%eax
+ 8048467:	29 c6                	sub    %eax,%esi
+ 8048469:	c1 fe 02             	sar    $0x2,%esi
+ 804846c:	85 f6                	test   %esi,%esi
+ 804846e:	74 25                	je     8048495 &lt;__libc_csu_init+0x55&gt;
+ 8048470:	31 ff                	xor    %edi,%edi
+ 8048472:	8d b6 00 00 00 00    	lea    0x0(%esi),%esi
+ 8048478:	83 ec 04             	sub    $0x4,%esp                        //循环开始
+ 804847b:	ff 74 24 2c          	pushl  0x2c(%esp)
+ 804847f:	ff 74 24 2c          	pushl  0x2c(%esp)
+ 8048483:	55                   	push   %ebp
+ 8048484:	ff 94 bb 08 ff ff ff 	call   *-0xf8(%ebx,%edi,4)
+ 804848b:	83 c7 01             	add    $0x1,%edi
+ 804848e:	83 c4 10             	add    $0x10,%esp
+ 8048491:	39 f7                	cmp    %esi,%edi
+ 8048493:	75 e3                	jne    8048478 &lt;__libc_csu_init+0x38&gt;   //循环结束
+ 8048495:	83 c4 0c             	add    $0xc,%esp
+ 8048498:	5b                   	pop    %ebx
+ 8048499:	5e                   	pop    %esi
+ 804849a:	5f                   	pop    %edi
+ 804849b:	5d                   	pop    %ebp
+ 804849c:	c3                   	ret    
+ 804849d:	8d 76 00             	lea    0x0(%esi),%esi
+
+...
+
+ 08048340 &lt;__x86.get_pc_thunk.bx&gt;:
+ 8048340:	8b 1c 24             	mov    (%esp),%ebx
+ 8048343:	c3                   	ret    
+</code></pre></div></div>
+
+<p>进入 <em>__libc_csu_init</em> 函数后先将要使用到的几个寄存器压入stack中，然后紧接着就调用了 <em>__x86.get_pc_thunk.bx</em> 函数。 <em>__x86.get_pc_thunk.bx</em> 要做的工作就是将 <em>__libc_csu_init</em> 函数中 <code class="highlighter-rouge">call __x86.get_pc_thunk.bx</code> 指令的下一条指令的地址保存到<code class="highlighter-rouge">%ebx</code>中。接着 <em>__libc_csu_init</em> 又会调用 <em>_init</em> 函数， <em>_init</em> 函数的也被添加到了 <em>hello</em> 中。调用完 <em>_init</em> 函数之后又会执行一个循环操作，主要是将 <em>argc</em> 、 <em>argv</em> 、 <em>envp</em> 作为参数调用函数。对应的C代码如下：</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>void
+__libc_csu_init (int argc, char **argv, char **envp)
+{
+
+  _init ();
+
+  const size_t size = __init_array_end - __init_array_start;
+  for (size_t i = 0; i &lt; size; i++)
+      (*__init_array_start [i]) (argc, argv, envp);
+}
+</code></pre></div></div>
+
+<h4 id="_init函数"><a href="#_init函数">_init函数</a></h4>
+<p>和 <em>_libc_csu_fini</em> 函数一样， <em>_init</em> 函数的也被添加到了 _hello_中， __init_函数的汇编代码如下：</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>080482a8 &lt;_init&gt;:
+ 80482a8:	53                   	push   %ebx
+ 80482a9:	83 ec 08             	sub    $0x8,%esp
+ 80482ac:	e8 8f 00 00 00       	call   8048340 &lt;__x86.get_pc_thunk.bx&gt;
+ 80482b1:	81 c3 4f 1d 00 00    	add    $0x1d4f,%ebx
+ 80482b7:	8b 83 fc ff ff ff    	mov    -0x4(%ebx),%eax
+ 80482bd:	85 c0                	test   %eax,%eax
+ 80482bf:	74 05                	je     80482c6 &lt;_init+0x1e&gt;
+ 80482c1:	e8 3a 00 00 00       	call   8048300 &lt;__libc_start_main@plt+0x10&gt; (.got.plt)
+ 80482c6:	83 c4 08             	add    $0x8,%esp
+ 80482c9:	5b                   	pop    %ebx
+ 80482ca:	c3                   	ret    
+
+ 08048300 &lt;.plt.got&gt;:
+ 8048300:	ff 25 fc 9f 04 08    	jmp    *0x8049ffc
+ 8048306:	66 90                	xchg   %ax,%ax
+</code></pre></div></div>
+
+<p><em>_init</em> 函数执行完之后返回到 <em>__libc_csu_init</em> 函数。 <em>__libc_csu_init</em> 函数执行完成之后又返回到 <em>__libc_start_main</em> 函数，然后我们的 <em>main</em> 函数就开始被调用了。 <em>main</em> 就不用说了， <em>main_函数执行完成之后会调用 _exit</em> 做好收尾工作。这就是<code class="highlighter-rouge">hello-world</code>程序执行的大致过程了。</p>
+
+<hr />
+<p>可能有人会有这样的疑问： <em>main</em> 函数的参数不是有三个( <em>argc</em>、 <em>argv</em>、 <em>envp</em> )吗？按理说 <em>__libc_start_main</em> 调用 <em>main</em> 函数的时候应该将这三个参数都传递给 <em>main</em> 函数的，但是为什么 <em>__libc_start_main</em> 函数的参数只有 <em>argc</em> 和 <em>argv</em> 而没有 <em>envp</em> 呢？这是因为 <em>__libc_start_main</em> 函数通过调用 <em>__libc_init_first</em> (源代码如下)就可以得到 <em>envp</em> , 并将全局变量 <em>_environ</em> 设置为 <em>envp</em> ，所以在 <em>__libc_start_main</em> 函数调用 <em>main</em> 函数时就不需要再显示的传递 <em>envp</em> 参数。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// 通过调用 __libc_init_first 函数将 envp 存到全局变量 _environ 中
+
+void __libc_init_first(int argc, char *arg0, ...)
+{
+    char **argv = &amp;arg0, **envp = &amp;argv[argc + 1];
+    __environ = envp;
+    __libc_init (argc, argv, envp);
+}
+</code></pre></div></div>
+
+<p>参考：<br />
+<a href="http://dbp-consulting.com/tutorials/debugging/linuxProgramStartup.html">Linux x86 Program Start Up or - How the heck do we get to main()?</a><br />
+<a href="https://luomuxiaoxiao.com/?p=516">Linux X86 程序启动 – main函数是如何被执行的？</a></p>
+:ET

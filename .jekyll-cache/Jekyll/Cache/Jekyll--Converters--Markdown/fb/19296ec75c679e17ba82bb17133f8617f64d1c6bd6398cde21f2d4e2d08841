@@ -1,0 +1,40 @@
+I"�<p>生成 <code class="highlighter-rouge">git</code> 公钥如下：</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ </span>ssh-keygen
+</code></pre></div></div>
+
+<p>执行结果：</p>
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ </span>ssh-keygen
+Generating public/private rsa key pair.
+Enter file <span class="k">in </span>which to save the key <span class="o">(</span>/home/sl/.ssh/id_rsa<span class="o">)</span>: 
+Enter passphrase <span class="o">(</span>empty <span class="k">for </span>no passphrase<span class="o">)</span>: 
+Enter same passphrase again: 
+Your identification has been saved <span class="k">in</span> /home/sl/.ssh/id_rsa.
+Your public key has been saved <span class="k">in</span> /home/sl/.ssh/id_rsa.pub.
+The key fingerprint is:
+SHA256:XXXrY7BeVPe6Sx3ZPXXXI/7pZS9DWT7SOXXXeO/TY+M sl@thinkpad
+The key<span class="s1">'s randomart image is:
++---[RSA 2048]----+
+|   .... .        |
+|  ..o  . .       |
+|   +..    . . o  |
+|  . *. . . + + o.|
+| . + .. S o o +++|
+|  .      o . oo@.|
+|        o . ..O B|
+|       . . . .o%o|
+|        .   .o*E=|
++----[SHA256]-----+
+
+</span></code></pre></div></div>
+
+<p>然后进入 ~/.ssh 目录，将</p>
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ </span><span class="nb">ls
+</span>config  id_rsa  id_rsa.pub  known_hosts
+
+<span class="nv">$ </span><span class="nb">cat </span>id_rsa.pub
+    ......
+</code></pre></div></div>
+
+<p>将id_rsa.pub内的内容全部拷贝到github上，点击添加即可。</p>
+:ET

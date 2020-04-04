@@ -1,0 +1,64 @@
+I"�
+<h3 id="整体思路">整体思路</h3>
+<p>编写window程序的步骤如下：</p>
+<ol>
+  <li>定义一个 <code class="highlighter-rouge">WNDCLASS</code>,并对其成员赋值；</li>
+  <li>调用 <code class="highlighter-rouge">RegisterClass</code> 注册定义的 <code class="highlighter-rouge">WNDCLASS</code>；</li>
+  <li>调用 <code class="highlighter-rouge">CreateWindow</code> 创建一个 window；</li>
+  <li>调用 <code class="highlighter-rouge">ShowWindow</code> 显示创建的 window</li>
+  <li>接受键盘、鼠标数据</li>
+</ol>
+
+<h3 id="定义一个-wndclass">定义一个 <code class="highlighter-rouge">WNDCLASS</code></h3>
+<pre><code class="language-C">typedef struct {
+    UINT style;
+    WNDPROC lpfnWndProc;
+    int cbClsExtra;
+    int cbWndExtra;
+    HINSTANCE hInstance;
+    HICON hIcon;
+    HCURSOR hCursor;
+    HBRUSH hbrBackground;
+    LPCTSTR lpszMenuName;
+    LPCTSTR lpszClassName;
+} WNDCLASS, *PWNDCLASS;
+</code></pre>
+<p>根据 <code class="highlighter-rouge">MSDN</code> 介绍，不必对<code class="highlighter-rouge">WNDCLASS</code>的每个成员都定义，只需要对三个成员定义即可.</p>
+
+<p><img src="https://github.com/Triangleowl/picture/blob/master/first-window/WNDCLASS.png" alt="MSDN手册" /></p>
+
+<h3 id="注册wndclass">注册<code class="highlighter-rouge">WNDCLASS</code></h3>
+<p>调用<code class="highlighter-rouge">RegisterClass</code>即可。</p>
+
+<h3 id="创建window">创建window</h3>
+<p><code class="highlighter-rouge">CreateWindow</code>的参数比较多，无用的参数赋值为0或者NULL即可。</p>
+<pre><code class="language-C">HWND CreateWindow(          LPCTSTR lpClassName,
+    LPCTSTR lpWindowName,
+    DWORD dwStyle,
+    int x,
+    int y,
+    int nWidth,
+    int nHeight,
+    HWND hWndParent,
+    HMENU hMenu,
+    HINSTANCE hInstance,
+    LPVOID lpParam
+);
+</code></pre>
+
+<h3 id="显示-window">显示 window</h3>
+<p>调用<code class="highlighter-rouge">ShowWindow</code>和<code class="highlighter-rouge">UpdateWindow</code>即可。</p>
+
+<h3 id="编写-windowproc函数">编写 <code class="highlighter-rouge">WindowProc</code>函数</h3>
+<p>为了能够交互，窗口应该能接受鼠标和键盘消息。按照要求，<code class="highlighter-rouge">WindowProc</code>函数的原型如下：</p>
+
+<pre><code class="language-C">LRESULT CALLBACK WindowProc(          HWND hwnd,
+    UINT uMsg,
+    WPARAM wParam,
+    LPARAM lParam
+);
+</code></pre>
+
+<p>具体的编程查询<code class="highlighter-rouge">MSDN</code>或者<code class="highlighter-rouge">MicroSoft</code>的<a href="https://docs.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program" title="第一个window程序">在线文档</a></p>
+
+:ET

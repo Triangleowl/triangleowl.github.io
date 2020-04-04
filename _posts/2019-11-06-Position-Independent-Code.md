@@ -294,12 +294,14 @@ stack中。然后跳转到`GOT[2]`(`%ebx`+0x8)处,`GOT[2]`将控制权交给动�
 * 当动态链接器拿到控制权之后会根据压入stack的参数来确定引用的符号的值，然后将此值写入对应的`GOT`中，然后将控制
 权还回给用调用程序。
 
-![第一次调用foo](https://github.com/Triangleowl/picture/blob/master/GOT/GOT1.png)
+![第一次调用foo](https://i.loli.net/2020/04/04/KaIcEmtvw7y5JnG.png "第一次调用foo")
+
 
 至此`foo`的`GOT`表中存放的已经是`foo`的绝对地址了，当再次代用`foo`时就不会像第一次调用这么麻烦，因为`GOT`表中已经
 有`foo`的地址了。
 
-![第二次调用foo](https://github.com/Triangleowl/picture/blob/master/GOT/GOT2.png)
+![第二次调用foo](https://i.loli.net/2020/04/04/zt8KThAVbglU4uJ.png "第二次调用foo")
+
 
 
 
