@@ -30,7 +30,8 @@ typedef struct {
 ```
 根据 `MSDN` 介绍，不必对`WNDCLASS`的每个成员都定义，只需要对三个成员定义即可.
 
-![MSDN手册](https://github.com/Triangleowl/picture/blob/master/first-window/WNDCLASS.png)
+![WNDCLASS介绍](https://github.com/Triangleowl/picture/blob/master/first-window/WNDCLASS.png?raw=true "MSDN手册")
+
 
 ### 注册`WNDCLASS`
 调用`RegisterClass`即可。
