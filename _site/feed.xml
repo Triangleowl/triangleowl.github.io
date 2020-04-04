@@ -1,5 +1,65 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="4.0.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2020-04-04T11:25:16+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Triangleowl’s Blog</title><subtitle>Hello World!
-</subtitle><author><name>triangleowl</name></author><entry><title type="html">生成 SSH 公钥</title><link href="http://localhost:4000/git/git-public-key" rel="alternate" type="text/html" title="生成 SSH 公钥" /><published>2020-04-04T00:00:00+08:00</published><updated>2020-04-04T00:00:00+08:00</updated><id>http://localhost:4000/git/git-public-key</id><content type="html" xml:base="http://localhost:4000/git/git-public-key">&lt;p&gt;生成 &lt;code class=&quot;highlighter-rouge&quot;&gt;git&lt;/code&gt; 公钥如下：&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="4.0.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2020-04-04T16:54:12+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Triangleowl’s Blog</title><subtitle>Hello World!
+</subtitle><author><name>triangleowl</name></author><entry><title type="html">第一个window程序</title><link href="http://localhost:4000/windows/first-window" rel="alternate" type="text/html" title="第一个window程序" /><published>2020-04-04T00:00:00+08:00</published><updated>2020-04-04T00:00:00+08:00</updated><id>http://localhost:4000/windows/first-window</id><content type="html" xml:base="http://localhost:4000/windows/first-window">&lt;h3 id=&quot;整体思路&quot;&gt;整体思路&lt;/h3&gt;
+&lt;p&gt;编写window程序的步骤如下：&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;定义一个 &lt;code class=&quot;highlighter-rouge&quot;&gt;WNDCLASS&lt;/code&gt;,并对其成员赋值；&lt;/li&gt;
+  &lt;li&gt;调用 &lt;code class=&quot;highlighter-rouge&quot;&gt;RegisterClass&lt;/code&gt; 注册定义的 &lt;code class=&quot;highlighter-rouge&quot;&gt;WNDCLASS&lt;/code&gt;；&lt;/li&gt;
+  &lt;li&gt;调用 &lt;code class=&quot;highlighter-rouge&quot;&gt;CreateWindow&lt;/code&gt; 创建一个 window；&lt;/li&gt;
+  &lt;li&gt;调用 &lt;code class=&quot;highlighter-rouge&quot;&gt;ShowWindow&lt;/code&gt; 显示创建的 window&lt;/li&gt;
+  &lt;li&gt;接受键盘、鼠标数据&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&quot;定义一个-wndclass&quot;&gt;定义一个 &lt;code class=&quot;highlighter-rouge&quot;&gt;WNDCLASS&lt;/code&gt;&lt;/h3&gt;
+&lt;pre&gt;&lt;code class=&quot;language-C&quot;&gt;typedef struct {
+    UINT style;
+    WNDPROC lpfnWndProc;
+    int cbClsExtra;
+    int cbWndExtra;
+    HINSTANCE hInstance;
+    HICON hIcon;
+    HCURSOR hCursor;
+    HBRUSH hbrBackground;
+    LPCTSTR lpszMenuName;
+    LPCTSTR lpszClassName;
+} WNDCLASS, *PWNDCLASS;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;根据 &lt;code class=&quot;highlighter-rouge&quot;&gt;MSDN&lt;/code&gt; 介绍，不必对&lt;code class=&quot;highlighter-rouge&quot;&gt;WNDCLASS&lt;/code&gt;的每个成员都定义，只需要对三个成员定义即可.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://github.com/Triangleowl/picture/blob/master/first-window/WNDCLASS.png&quot; alt=&quot;MSDN手册&quot; /&gt;&lt;/p&gt;
+
+&lt;h3 id=&quot;注册wndclass&quot;&gt;注册&lt;code class=&quot;highlighter-rouge&quot;&gt;WNDCLASS&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;调用&lt;code class=&quot;highlighter-rouge&quot;&gt;RegisterClass&lt;/code&gt;即可。&lt;/p&gt;
+
+&lt;h3 id=&quot;创建window&quot;&gt;创建window&lt;/h3&gt;
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;CreateWindow&lt;/code&gt;的参数比较多，无用的参数赋值为0或者NULL即可。&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-C&quot;&gt;HWND CreateWindow(          LPCTSTR lpClassName,
+    LPCTSTR lpWindowName,
+    DWORD dwStyle,
+    int x,
+    int y,
+    int nWidth,
+    int nHeight,
+    HWND hWndParent,
+    HMENU hMenu,
+    HINSTANCE hInstance,
+    LPVOID lpParam
+);
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&quot;显示-window&quot;&gt;显示 window&lt;/h3&gt;
+&lt;p&gt;调用&lt;code class=&quot;highlighter-rouge&quot;&gt;ShowWindow&lt;/code&gt;和&lt;code class=&quot;highlighter-rouge&quot;&gt;UpdateWindow&lt;/code&gt;即可。&lt;/p&gt;
+
+&lt;h3 id=&quot;编写-windowproc函数&quot;&gt;编写 &lt;code class=&quot;highlighter-rouge&quot;&gt;WindowProc&lt;/code&gt;函数&lt;/h3&gt;
+&lt;p&gt;为了能够交互，窗口应该能接受鼠标和键盘消息。按照要求，&lt;code class=&quot;highlighter-rouge&quot;&gt;WindowProc&lt;/code&gt;函数的原型如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-C&quot;&gt;LRESULT CALLBACK WindowProc(          HWND hwnd,
+    UINT uMsg,
+    WPARAM wParam,
+    LPARAM lParam
+);
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;具体的编程查询&lt;code class=&quot;highlighter-rouge&quot;&gt;MSDN&lt;/code&gt;或者&lt;code class=&quot;highlighter-rouge&quot;&gt;MicroSoft&lt;/code&gt;的&lt;a href=&quot;https://docs.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program&quot; title=&quot;第一个window程序&quot;&gt;在线文档&lt;/a&gt;&lt;/p&gt;</content><author><name>Triangleowl</name></author><summary type="html">整体思路 编写window程序的步骤如下： 定义一个 WNDCLASS,并对其成员赋值； 调用 RegisterClass 注册定义的 WNDCLASS； 调用 CreateWindow 创建一个 window； 调用 ShowWindow 显示创建的 window 接受键盘、鼠标数据 定义一个 WNDCLASS typedef struct { UINT style; WNDPROC lpfnWndProc; int cbClsExtra; int cbWndExtra; HINSTANCE hInstance; HICON hIcon; HCURSOR hCursor; HBRUSH hbrBackground; LPCTSTR lpszMenuName; LPCTSTR lpszClassName; } WNDCLASS, *PWNDCLASS; 根据 MSDN 介绍，不必对WNDCLASS的每个成员都定义，只需要对三个成员定义即可. 注册WNDCLASS 调用RegisterClass即可。 创建window CreateWindow的参数比较多，无用的参数赋值为0或者NULL即可。 HWND CreateWindow( LPCTSTR lpClassName, LPCTSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam ); 显示 window 调用ShowWindow和UpdateWindow即可。 编写 WindowProc函数 为了能够交互，窗口应该能接受鼠标和键盘消息。按照要求，WindowProc函数的原型如下： LRESULT CALLBACK WindowProc( HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam ); 具体的编程查询MSDN或者MicroSoft的在线文档</summary></entry><entry><title type="html">生成 SSH 公钥</title><link href="http://localhost:4000/git/git-public-key" rel="alternate" type="text/html" title="生成 SSH 公钥" /><published>2020-04-04T00:00:00+08:00</published><updated>2020-04-04T00:00:00+08:00</updated><id>http://localhost:4000/git/git-public-key</id><content type="html" xml:base="http://localhost:4000/git/git-public-key">&lt;p&gt;生成 &lt;code class=&quot;highlighter-rouge&quot;&gt;git&lt;/code&gt; 公钥如下：&lt;/p&gt;
 
 &lt;div class=&quot;language-shell highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nv&quot;&gt;$ &lt;/span&gt;ssh-keygen
 &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
@@ -477,12 +537,12 @@ stack中。然后跳转到&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT[2]
 权还回给用调用程序。&lt;/li&gt;
 &lt;/ul&gt;
 
-&lt;p&gt;&lt;img src=&quot;https://github.com/Triangleowl/picture/blob/master/GOT1.png?raw=true&quot; alt=&quot;第一次调用foo&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://github.com/Triangleowl/picture/blob/master/GOT/GOT1.png&quot; alt=&quot;第一次调用foo&quot; /&gt;&lt;/p&gt;
 
 &lt;p&gt;至此&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;表中存放的已经是&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的绝对地址了，当再次代用&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;时就不会像第一次调用这么麻烦，因为&lt;code class=&quot;highlighter-rouge&quot;&gt;GOT&lt;/code&gt;表中已经
 有&lt;code class=&quot;highlighter-rouge&quot;&gt;foo&lt;/code&gt;的地址了。&lt;/p&gt;
 
-&lt;p&gt;&lt;img src=&quot;https://github.com/Triangleowl/picture/blob/master/GOT2.png?raw=true&quot; alt=&quot;第二次调用foo&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://github.com/Triangleowl/picture/blob/master/GOT/GOT2.png&quot; alt=&quot;第二次调用foo&quot; /&gt;&lt;/p&gt;
 
 &lt;hr /&gt;
 &lt;p&gt;参考：&lt;br /&gt;

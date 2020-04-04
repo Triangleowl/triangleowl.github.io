@@ -16,7 +16,7 @@
 <meta property="og:type" content="article" />
 <meta property="article:published_time" content="2019-11-06T00:00:00+08:00" />
 <script type="application/ld+json">
-{"description":"Table Of Contents 链接时重定位 装载时重定位 模块内部数据访问 模块间数据访问 模块间函数调用","headline":"PLT和GOT–实现位置无关代码","dateModified":"2019-11-06T00:00:00+08:00","datePublished":"2019-11-06T00:00:00+08:00","@type":"BlogPosting","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/linux/Position-Independent-Code"},"url":"http://localhost:4000/linux/Position-Independent-Code","author":{"@type":"Person","name":"Triangleowl"},"@context":"https://schema.org"}</script>
+{"datePublished":"2019-11-06T00:00:00+08:00","@type":"BlogPosting","dateModified":"2019-11-06T00:00:00+08:00","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/linux/Position-Independent-Code"},"url":"http://localhost:4000/linux/Position-Independent-Code","author":{"@type":"Person","name":"Triangleowl"},"headline":"PLT和GOT–实现位置无关代码","description":"Table Of Contents 链接时重定位 装载时重定位 模块内部数据访问 模块间数据访问 模块间函数调用","@context":"https://schema.org"}</script>
 <!-- End Jekyll SEO tag -->
 <link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="http://localhost:4000/feed.xml" title="Triangleowl's Blog" /></head>
 <body><header class="site-header">
@@ -336,12 +336,12 @@ stack中。然后跳转到<code class="highlighter-rouge">GOT[2]</code>(<code cl
 权还回给用调用程序。</li>
 </ul>
 
-<p><img src="https://github.com/Triangleowl/picture/blob/master/GOT1.png?raw=true" alt="第一次调用foo" /></p>
+<p><img src="https://github.com/Triangleowl/picture/blob/master/GOT/GOT1.png" alt="第一次调用foo" /></p>
 
 <p>至此<code class="highlighter-rouge">foo</code>的<code class="highlighter-rouge">GOT</code>表中存放的已经是<code class="highlighter-rouge">foo</code>的绝对地址了，当再次代用<code class="highlighter-rouge">foo</code>时就不会像第一次调用这么麻烦，因为<code class="highlighter-rouge">GOT</code>表中已经
 有<code class="highlighter-rouge">foo</code>的地址了。</p>
 
-<p><img src="https://github.com/Triangleowl/picture/blob/master/GOT2.png?raw=true" alt="第二次调用foo" /></p>
+<p><img src="https://github.com/Triangleowl/picture/blob/master/GOT/GOT2.png" alt="第二次调用foo" /></p>
 
 <hr />
 <p>参考：<br />
