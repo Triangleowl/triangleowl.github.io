@@ -1,43 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="4.0.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2020-04-04T11:25:16+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Triangleowl’s Blog</title><subtitle>Hello World!
-</subtitle><author><name>triangleowl</name></author><entry><title type="html">生成 SSH 公钥</title><link href="http://localhost:4000/git/git-public-key" rel="alternate" type="text/html" title="生成 SSH 公钥" /><published>2020-04-04T00:00:00+08:00</published><updated>2020-04-04T00:00:00+08:00</updated><id>http://localhost:4000/git/git-public-key</id><content type="html" xml:base="http://localhost:4000/git/git-public-key">&lt;p&gt;生成 &lt;code class=&quot;highlighter-rouge&quot;&gt;git&lt;/code&gt; 公钥如下：&lt;/p&gt;
-
-&lt;div class=&quot;language-shell highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nv&quot;&gt;$ &lt;/span&gt;ssh-keygen
-&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
-
-&lt;p&gt;执行结果：&lt;/p&gt;
-&lt;div class=&quot;language-shell highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nv&quot;&gt;$ &lt;/span&gt;ssh-keygen
-Generating public/private rsa key pair.
-Enter file &lt;span class=&quot;k&quot;&gt;in &lt;/span&gt;which to save the key &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;/home/sl/.ssh/id_rsa&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;: 
-Enter passphrase &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;empty &lt;span class=&quot;k&quot;&gt;for &lt;/span&gt;no passphrase&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;: 
-Enter same passphrase again: 
-Your identification has been saved &lt;span class=&quot;k&quot;&gt;in&lt;/span&gt; /home/sl/.ssh/id_rsa.
-Your public key has been saved &lt;span class=&quot;k&quot;&gt;in&lt;/span&gt; /home/sl/.ssh/id_rsa.pub.
-The key fingerprint is:
-SHA256:XXXrY7BeVPe6Sx3ZPXXXI/7pZS9DWT7SOXXXeO/TY+M sl@thinkpad
-The key&lt;span class=&quot;s1&quot;&gt;'s randomart image is:
-+---[RSA 2048]----+
-|   .... .        |
-|  ..o  . .       |
-|   +..    . . o  |
-|  . *. . . + + o.|
-| . + .. S o o +++|
-|  .      o . oo@.|
-|        o . ..O B|
-|       . . . .o%o|
-|        .   .o*E=|
-+----[SHA256]-----+
-
-&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
-
-&lt;p&gt;然后进入 ~/.ssh 目录，将&lt;/p&gt;
-&lt;div class=&quot;language-shell highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nv&quot;&gt;$ &lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;ls
-&lt;/span&gt;config  id_rsa  id_rsa.pub  known_hosts
-
-&lt;span class=&quot;nv&quot;&gt;$ &lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;cat &lt;/span&gt;id_rsa.pub
-    ......
-&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
-
-&lt;p&gt;将id_rsa.pub内的内容全部拷贝到github上，点击添加即可。&lt;/p&gt;</content><author><name>Triangleowl</name></author><summary type="html">生成 git 公钥如下：</summary></entry><entry><title type="html">AFL 源码码插桩分析</title><link href="http://localhost:4000/fuzzing/AFL-instrunmentation" rel="alternate" type="text/html" title="AFL 源码码插桩分析" /><published>2019-11-23T00:00:00+08:00</published><updated>2019-11-23T00:00:00+08:00</updated><id>http://localhost:4000/fuzzing/AFL-instrunmentation</id><content type="html" xml:base="http://localhost:4000/fuzzing/AFL-instrunmentation">&lt;h2 id=&quot;table-of-contents&quot;&gt;Table of Contents&lt;/h2&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="4.0.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2020-04-04T11:22:43+08:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Triangleowl’s Blog</title><subtitle>Hello World!
+</subtitle><author><name>triangleowl</name></author><entry><title type="html">AFL 源码码插桩分析</title><link href="http://localhost:4000/fuzzing/AFL-instrunmentation" rel="alternate" type="text/html" title="AFL 源码码插桩分析" /><published>2019-11-23T00:00:00+08:00</published><updated>2019-11-23T00:00:00+08:00</updated><id>http://localhost:4000/fuzzing/AFL-instrunmentation</id><content type="html" xml:base="http://localhost:4000/fuzzing/AFL-instrunmentation">&lt;h2 id=&quot;table-of-contents&quot;&gt;Table of Contents&lt;/h2&gt;
 &lt;h4 id=&quot;afl-gcc分析-&quot;&gt;&lt;a href=&quot;#afl-gcc分析&quot;&gt;afl-gcc分析 &lt;/a&gt;&lt;/h4&gt;
 &lt;h4 id=&quot;afl-as分析-&quot;&gt;&lt;a href=&quot;#afl-as分析&quot;&gt;afl-as分析 &lt;/a&gt;&lt;/h4&gt;
 &lt;ul&gt;

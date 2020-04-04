@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>动态链接共享库 | Triangleowl’s Blog</title>
+<meta name="generator" content="Jekyll v4.0.0" />
+<meta property="og:title" content="动态链接共享库" />
+<meta name="author" content="Triangleowl" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="共享库的优点 和静态库相比，共享库主要有一下几个优点： 维护方便。静态库和所有软件一样，也需要定期维护和更新，如果程序是以静态方式链接的，则每次修改 库都需要重新编译并链接。如果程序很大，则编译和链接都很费时间。但是如果使用共享库则完全不存在这 个问题，只要更新共享库就行了，程序运行是会共享的加载更新过的库。" />
+<meta property="og:description" content="共享库的优点 和静态库相比，共享库主要有一下几个优点： 维护方便。静态库和所有软件一样，也需要定期维护和更新，如果程序是以静态方式链接的，则每次修改 库都需要重新编译并链接。如果程序很大，则编译和链接都很费时间。但是如果使用共享库则完全不存在这 个问题，只要更新共享库就行了，程序运行是会共享的加载更新过的库。" />
+<link rel="canonical" href="http://localhost:4000/linux/2019/11/05/dynamic-libraries-share.html" />
+<meta property="og:url" content="http://localhost:4000/linux/2019/11/05/dynamic-libraries-share.html" />
+<meta property="og:site_name" content="Triangleowl’s Blog" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-11-05T00:00:00+08:00" />
+<script type="application/ld+json">
+{"description":"共享库的优点 和静态库相比，共享库主要有一下几个优点： 维护方便。静态库和所有软件一样，也需要定期维护和更新，如果程序是以静态方式链接的，则每次修改 库都需要重新编译并链接。如果程序很大，则编译和链接都很费时间。但是如果使用共享库则完全不存在这 个问题，只要更新共享库就行了，程序运行是会共享的加载更新过的库。","headline":"动态链接共享库","dateModified":"2019-11-05T00:00:00+08:00","datePublished":"2019-11-05T00:00:00+08:00","@type":"BlogPosting","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/linux/2019/11/05/dynamic-libraries-share.html"},"url":"http://localhost:4000/linux/2019/11/05/dynamic-libraries-share.html","author":{"@type":"Person","name":"Triangleowl"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/css/style.css"><link type="application/atom+xml" rel="alternate" href="http://localhost:4000/feed.xml" title="Triangleowl's Blog" /></head>
+<body><header class="site-header">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Triangleowl&#39;s Blog</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">动态链接共享库</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2019-11-05T00:00:00+08:00" itemprop="datePublished">Nov 5, 2019
+      </time>• <span itemprop="author" itemscope itemtype="http://schema.org/Person"><span class="p-author h-card" itemprop="name">Triangleowl</span></span></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <h3 id="共享库的优点"><a href="#共享库的优点">共享库的优点</a></h3>
+<p>和静态库相比，共享库主要有一下几个优点：</p>
+<ul>
+  <li>
+    <p>维护方便。静态库和所有软件一样，也需要定期维护和更新，如果程序是以静态方式链接的，则每次修改
+库都需要重新编译并链接。如果程序很大，则编译和链接都很费时间。但是如果使用共享库则完全不存在这
+个问题，只要更新共享库就行了，程序运行是会共享的加载更新过的库。</p>
+  </li>
+  <li>
+    <p>节省内存。基本上每个程序C程序都使用标准I/O函数，比如<code class="highlighter-rouge">printf</code>、<code class="highlighter-rouge">scanf</code>等。在运行程序时这些代码都
+会被加载到每个进程的代码段中。如果有几百个程序都用到了某个库中的同一个函数，则需要将同一段代码加载
+几百份到内存中，这样做极其浪费宝贵的内存资源。而使用共享库则只需要加载一份代码到内存中。</p>
+  </li>
+</ul>
+
+<p>共享库的出现解决了静态库的缺陷，共享库是一个<code class="highlighter-rouge">目标模块</code>，只有在用到的时候才会加载，而且可以加载到任意
+地址，并且和正在内存中运行的进程链接起来。</p>
+
+<h3 id="位置无关代码"><a href="#位置无关代码">位置无关代码</a></h3>
+<p>共享库的一个主要目标就是允许多个进程共享加载到内存的相同代码库，从而节约宝贵的内存资源。那么进程间
+是如何共享同一段代码的呢？一个简单的方法是给每个库分配一个专用的地址空间，然后加载器就按照分配的地址
+将代码加载到内存中。但是问题又来了，如果一个库修改之后占用的内存空间变大了，这是就要考虑原来计划分配
+的地址空间还适合修改之后的大小，如果不合适则要重新分配内存空间。如果有几百个库，则库的内存管理则变成
+一个十分棘手的问题。</p>
+
+<p>共享代码也有一个很大的问题，那就是共享代码也要处理数据，而数据存在内存中。如果多个进程共享库中的代码
+和库的数据，那么不同进程对数据进行不同的操作，最后的结果就使数据乱套。所以每个进程只能共享库的代码，
+而不能共享库的数据。因为代码只具有<code class="highlighter-rouge">R-E</code>属性，虽然多个进程可以同时使用一份代码，但是不能修改代码，而
+每个进程都有一份自己的数据来公共享代码访问，这样就能保证数据的安全和准确。</p>
+
+<p>但是问题又来了：既不能修改代码又要保证每个进程使用的共享库代码访问的是自己的数据。如何做到这一点呢？
+如果无法解决这个问题就无法实现位置无关代码(Position-Independent Code，PIC)。实现PIC就要借助<code class="highlighter-rouge">GOT</code>和
+<code class="highlighter-rouge">PLT</code>。具体内容可以参考：<a href="https://triangleowl.github.io/linux/2019/11/06/Position-Independent-Code.html">位置无关代码</a></p>
+
+  </div><a class="u-url" href="/linux/2019/11/05/dynamic-libraries-share.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col one-half">
+      <h2 class="footer-heading">Triangleowl&#39;s Blog</h2>
+        <ul class="contact-list">
+          <li class="p-name">triangleowl</li><li><a class="u-email" href="mailto:shil0618207@gmail.com">shil0618207@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col one-half">
+        <p>Hello World!
+</p>
+      </div>
+
+      <div class="social-links"><ul class="social-media-list"><li><a rel="me" href="https://github.com/triangleowl.github" title="triangleowl.github"><svg class="svg-icon grey"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg></a></li><li><a rel="me" href="https://twitter.com/triangleowl1" title="triangleowl1"><svg class="svg-icon grey"><use xlink:href="/assets/minima-social-icons.svg#twitter"></use></svg></a></li><li><a href="/feed.xml" title="rss"><svg class="svg-icon grey"><use xlink:href="/assets/minima-social-icons.svg#rss"></use></svg></a></li></ul>
+</div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
